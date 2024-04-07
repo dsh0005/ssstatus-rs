@@ -23,6 +23,7 @@ use dbus::nonblock::{LocalConnection, Proxy};
 use dbus_tokio::connection;
 use std::error::Error;
 use std::fmt;
+use std::io::{self, Write};
 use std::option::Option;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -126,8 +127,25 @@ async fn listen_for_tzchange(
 }
 
 // TODO: async for listening for time change
+// This involves creating a timerfd with TFD_TIMER_CANCEL_ON_SET set,
+// then waiting on it. This will involve tokio::io::AsyncRead, or
+// something like that.
 
-// TODO: async for ticks
+async fn update_statusbar(data: Arc<Mutex<StatusbarData>>) -> Result<(), Box<dyn Error>> {
+    // TODO: get time
+    // TODO: calculate top of next minute
+    // TODO: sleep until next minute
+
+    // TODO: grab lock on StatusbarData
+    let dat = data.lock().unwrap();
+
+    let stdout = io::stdout();
+    let mut locked = stdout.lock();
+
+    // TODO: print out status
+
+    Ok(())
+}
 
 async fn setup_system_connection(
     sys_conn: Arc<LocalConnection>,
@@ -173,6 +191,8 @@ pub async fn main() -> Result<(), Box<dyn Error>> {
 
     // Set up all the listening stuff for the system connection.
     let _sys_connect = local_tasks.spawn_local(setup_system_connection(sys_conn));
+
+    // TODO: set up the statusbar printer?
 
     // Wait for our tasks to finish.
     local_tasks.await;
