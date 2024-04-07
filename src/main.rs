@@ -17,21 +17,105 @@
  * If not, see <https://www.gnu.org/licenses/>.
  */
 
-use dbus_tokio::connection;
+use chrono_tz::Tz;
 use dbus::nonblock::{LocalConnection, Proxy};
-use std::sync::Arc;
+use dbus_tokio::connection;
 use std::error::Error;
-use std::time::Duration;
+use std::fmt;
+use std::option::Option;
+use std::sync::Arc;
+use std::time::{Duration, Instant};
+
+struct MaybeData<T>(Result<Option<(Instant, T)>, Box<dyn Error>>);
+
+impl<T: fmt::Display> fmt::Display for MaybeData<T> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match &self.0 {
+            Ok(opt) => match opt {
+                Some((_timestamp, val)) => write!(f, "{}", val),
+                None => write!(f, "None"),
+            },
+            Err(e) => write!(f, "{}", e),
+        }
+    }
+}
+
+struct BatteryStatus {
+    percentage: i32,
+}
+
+impl fmt::Display for BatteryStatus {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}%", self.percentage)
+    }
+}
+
+struct StatusbarData {
+    battery: MaybeData<BatteryStatus>,
+    timezone: MaybeData<Tz>,
+}
+
+impl StatusbarData {}
+
+impl fmt::Display for StatusbarData {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{} | TBD", self.battery)
+    }
+}
+// TODO: define an RCU structure?
+
+async fn listen_to_upower(sys_conn: Arc<LocalConnection>) -> Result<(), Box<dyn Error>> {
+    let upower_proxy = Proxy::new(
+        "org.freedesktop.UPower",
+        "/org/freedesktop/UPower/devices/DisplayDevice",
+        Duration::from_secs(5),
+        sys_conn,
+    );
+
+    // TODO: add match
+    // TODO: update data
+    // TODO: schedule refresh
+
+    Ok(())
+}
+
+async fn listen_for_tzchange(sys_conn: Arc<LocalConnection>) -> Result<(), Box<dyn Error>> {
+    let timedate_proxy = Proxy::new(
+        "org.freedesktop.timedate1",
+        "/org/freedesktop/timedate1",
+        Duration::from_secs(5),
+        sys_conn,
+    );
+
+    // TODO: add match for TZ change
+    // TODO: update data
+    // TODO: schedule refresh
+
+    Ok(())
+}
+
+// TODO: async for listening for time change
+
+// TODO: async for ticks
 
 async fn setup_system_connection(sys_conn: Arc<LocalConnection>) -> Result<(), Box<dyn Error>> {
     // Get a proxy to the bus.
-    let bus_proxy = Proxy::new("org.freedesktop.DBus", "/", Duration::from_secs(5), sys_conn);
+    let bus_proxy = Proxy::new(
+        "org.freedesktop.DBus",
+        "/",
+        Duration::from_secs(5),
+        sys_conn,
+    );
 
     // Get what activatable names there are.
-    let (sys_act_names,): (Vec<String>,) = bus_proxy.method_call("org.freedesktop.DBus", "ListActivatableNames", ()).await?;
+    let (sys_act_names,): (Vec<String>,) = bus_proxy
+        .method_call("org.freedesktop.DBus", "ListActivatableNames", ())
+        .await?;
 
     // Print all the names.
-    for name in sys_act_names { println!("{}", name); }
+    for name in sys_act_names {
+        println!("{}", name);
+    }
 
     // TODO: make connections to UPower & al. and add matches to subscribe to signals.
 
@@ -40,7 +124,6 @@ async fn setup_system_connection(sys_conn: Arc<LocalConnection>) -> Result<(), B
 
 #[tokio::main(flavor = "current_thread")]
 pub async fn main() -> Result<(), Box<dyn Error>> {
-
     let local_tasks = tokio::task::LocalSet::new();
 
     // Connect to the system bus, since we want time, battery, &c. info.
