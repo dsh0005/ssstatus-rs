@@ -17,13 +17,14 @@
  * If not, see <https://www.gnu.org/licenses/>.
  */
 
+use chrono::{DateTime, TimeZone, Utc};
 use chrono_tz::Tz;
 use dbus::nonblock::{LocalConnection, Proxy};
 use dbus_tokio::connection;
 use std::error::Error;
 use std::fmt;
 use std::option::Option;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 struct MaybeData<T>(Result<Option<(Instant, T)>, Box<dyn Error>>);
@@ -55,16 +56,43 @@ struct StatusbarData {
     timezone: MaybeData<Tz>,
 }
 
-impl StatusbarData {}
+struct DateTimeData<Tz: TimeZone>(Result<Option<DateTime<Tz>>, Box<dyn Error>>);
+
+impl fmt::Display for DateTimeData<Tz> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match &self.0 {
+            Ok(opt) => match opt {
+                Some(date_time) => Ok(()),
+                None => write!(f, "none"),
+            },
+            Err(e) => write!(f, "{}", e),
+        }
+    }
+}
+
+impl StatusbarData {
+    pub fn time(&self) -> DateTimeData<Tz> {
+        match &self.timezone.0 {
+            Ok(opt) => match opt {
+                Some((_timestamp, tz)) => DateTimeData(Ok(Some(Utc::now().with_timezone(&tz)))),
+                None => DateTimeData(Ok(None)),
+            },
+            Err(e) => DateTimeData(Err(e.to_string().into())),
+        }
+    }
+}
 
 impl fmt::Display for StatusbarData {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{} | TBD", self.battery)
+        write!(f, "{} | {}", self.battery, self.time())
     }
 }
 // TODO: define an RCU structure?
 
-async fn listen_to_upower(sys_conn: Arc<LocalConnection>) -> Result<(), Box<dyn Error>> {
+async fn listen_to_upower(
+    sys_conn: Arc<LocalConnection>,
+    data: Arc<Mutex<StatusbarData>>,
+) -> Result<(), Box<dyn Error>> {
     let upower_proxy = Proxy::new(
         "org.freedesktop.UPower",
         "/org/freedesktop/UPower/devices/DisplayDevice",
@@ -79,7 +107,10 @@ async fn listen_to_upower(sys_conn: Arc<LocalConnection>) -> Result<(), Box<dyn 
     Ok(())
 }
 
-async fn listen_for_tzchange(sys_conn: Arc<LocalConnection>) -> Result<(), Box<dyn Error>> {
+async fn listen_for_tzchange(
+    sys_conn: Arc<LocalConnection>,
+    data: Arc<Mutex<StatusbarData>>,
+) -> Result<(), Box<dyn Error>> {
     let timedate_proxy = Proxy::new(
         "org.freedesktop.timedate1",
         "/org/freedesktop/timedate1",
@@ -98,7 +129,10 @@ async fn listen_for_tzchange(sys_conn: Arc<LocalConnection>) -> Result<(), Box<d
 
 // TODO: async for ticks
 
-async fn setup_system_connection(sys_conn: Arc<LocalConnection>) -> Result<(), Box<dyn Error>> {
+async fn setup_system_connection(
+    sys_conn: Arc<LocalConnection>,
+    data: Arc<Mutex<StatusbarData>>,
+) -> Result<(), Box<dyn Error>> {
     // Get a proxy to the bus.
     let bus_proxy = Proxy::new(
         "org.freedesktop.DBus",
