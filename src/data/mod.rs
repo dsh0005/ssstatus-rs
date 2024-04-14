@@ -52,7 +52,7 @@ impl StatusbarData {
     pub fn time(&self) -> DateTimeData<Tz> {
         match &self.timezone.0 {
             Ok(opt) => match opt {
-                Some((_timestamp, tz)) => DateTimeData(Ok(Some(Utc::now().with_timezone(&tz)))),
+                Some((_timestamp, tz)) => DateTimeData(Ok(Some(Utc::now().with_timezone(tz)))),
                 None => DateTimeData(Ok(None)),
             },
             Err(e) => DateTimeData(Err(e.to_string().into())),
