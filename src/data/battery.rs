@@ -20,7 +20,7 @@
 use std::fmt;
 
 pub struct BatteryStatus {
-    percentage: i32,
+    pub percentage: f64,
 }
 
 impl fmt::Display for BatteryStatus {

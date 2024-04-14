@@ -65,6 +65,28 @@ impl StatusbarData {
             timezone: MaybeData(Ok(None)),
         }
     }
+
+    pub fn update_battery_result(&mut self, bat: Result<BatteryStatus, Box<dyn Error>>) {
+        match bat {
+            Ok(status) => self.update_battery(status),
+            Err(e) => self.battery = MaybeData(Err(e)),
+        }
+    }
+
+    pub fn update_battery(&mut self, bat: BatteryStatus) {
+        self.battery = MaybeData(Ok(Some((Instant::now(), bat))))
+    }
+
+    pub fn update_timezone_result(&mut self, tz: Result<Tz, Box<dyn Error>>) {
+        match tz {
+            Ok(tz) => self.update_timezone(tz),
+            Err(e) => self.timezone = MaybeData(Err(e)),
+        }
+    }
+
+    pub fn update_timezone(&mut self, tz: Tz) {
+        self.timezone = MaybeData(Ok(Some((Instant::now(), tz))))
+    }
 }
 
 impl fmt::Display for StatusbarData {

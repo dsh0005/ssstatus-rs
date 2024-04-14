@@ -17,6 +17,8 @@
  * If not, see <https://www.gnu.org/licenses/>.
  */
 
+use chrono_tz::Tz;
+use dbus::nonblock::stdintf::org_freedesktop_dbus::Properties;
 use dbus::nonblock::{LocalConnection, Proxy};
 use dbus_tokio::connection;
 use std::error::Error;
@@ -27,6 +29,7 @@ use std::time::Duration;
 mod data;
 mod time;
 
+use crate::data::battery::BatteryStatus;
 use crate::data::StatusbarData;
 
 async fn listen_to_upower(
@@ -39,6 +42,22 @@ async fn listen_to_upower(
         Duration::from_secs(5),
         sys_conn,
     );
+
+    // Get the starting percentage.
+    let start_pct = upower_proxy
+        .get::<f64>("org.freedesktop.UPower.Device", "Percentage")
+        .await?;
+
+    // Set the start percentage.
+    {
+        let mut dat = data.lock().unwrap();
+        dat.update_battery(BatteryStatus {
+            percentage: start_pct,
+        });
+    }
+
+    // TODO: remove
+    println!("starting battery: {}%", start_pct);
 
     // TODO: add match
     // TODO: update data
@@ -57,6 +76,21 @@ async fn listen_for_tzchange(
         Duration::from_secs(5),
         sys_conn,
     );
+
+    // Get the starting TZ.
+    let start_tz = timedate_proxy
+        .get::<String>("org.freedesktop.timedate1", "Timezone")
+        .await?
+        .parse::<Tz>()?;
+
+    // Set the starting TZ.
+    {
+        let mut dat = data.lock().unwrap();
+        dat.update_timezone(start_tz);
+    }
+
+    // TODO: remove
+    println!("starting TZ: {}", start_tz);
 
     // TODO: add match for TZ change
     // TODO: update data
@@ -132,7 +166,11 @@ pub async fn main() -> Result<(), Box<dyn Error>> {
     let sb_dat = Arc::new(Mutex::new(StatusbarData::new()));
 
     // Set up all the listening stuff for the system connection.
-    let _sys_connect = local_tasks.spawn_local(setup_system_connection(sys_conn, sb_dat));
+    let _sys_connect =
+        local_tasks.spawn_local(setup_system_connection(sys_conn.clone(), sb_dat.clone()));
+
+    let _upow_connect = local_tasks.spawn_local(listen_to_upower(sys_conn.clone(), sb_dat.clone()));
+    let _tz_connect = local_tasks.spawn_local(listen_for_tzchange(sys_conn, sb_dat));
 
     // TODO: set up the statusbar printer?
 
