@@ -32,6 +32,10 @@ mod time;
 use crate::data::battery::BatteryStatus;
 use crate::data::StatusbarData;
 
+// TODO: add a place to put realtime clock change detection.
+// TODO: use timerfd crate
+// TODO: wrap it with tokio::io::unix::AsyncFd?
+
 async fn listen_to_upower(
     sys_conn: Arc<LocalConnection>,
     data: Arc<Mutex<StatusbarData>>,
