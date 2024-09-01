@@ -35,3 +35,27 @@ impl fmt::Display for DateTimeData<Tz> {
         }
     }
 }
+
+use chrono::{DurationRound, Local, TimeDelta};
+use tokio::time::sleep;
+
+pub async fn wait_till_next_minute() -> Result<(), Box<dyn Error>> {
+    let start = Local::now();
+    let halfMinute = TimeDelta::seconds(30);
+    let minute = TimeDelta::minutes(1);
+    let nextMinute = (start + halfMinute).duration_round(minute)?;
+
+    let sleepDuration = nextMinute - start;
+    let stdSleepDuration = sleepDuration.to_std()?;
+
+    println!("start wait at {}", start);
+    println!("wait until {}", nextMinute);
+    println!("expected duration {}", sleepDuration);
+
+    sleep(stdSleepDuration).await;
+
+    let finish = Local::now();
+    println!("finish wait: {}", finish);
+
+    Ok(())
+}

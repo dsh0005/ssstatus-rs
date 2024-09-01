@@ -31,6 +31,7 @@ mod time;
 
 use crate::data::battery::BatteryStatus;
 use crate::data::StatusbarData;
+use crate::time::wait_till_next_minute;
 
 // TODO: add a place to put realtime clock change detection.
 // TODO: use timerfd crate
@@ -175,6 +176,8 @@ pub async fn main() -> Result<(), Box<dyn Error>> {
 
     let _upow_connect = local_tasks.spawn_local(listen_to_upower(sys_conn.clone(), sb_dat.clone()));
     let _tz_connect = local_tasks.spawn_local(listen_for_tzchange(sys_conn, sb_dat));
+
+    let _wait_test = local_tasks.spawn_local(wait_till_next_minute());
 
     // TODO: set up the statusbar printer?
 
