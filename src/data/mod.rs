@@ -29,7 +29,7 @@ pub mod battery;
 
 use battery::BatteryStatus;
 
-pub struct MaybeData<T>(pub Result<Option<(Instant, T)>, Box<dyn Error>>);
+pub struct MaybeData<T>(pub Result<Option<(Instant, T)>, Box<dyn Error + Send + Sync>>);
 
 impl<T: fmt::Display> fmt::Display for MaybeData<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -66,7 +66,10 @@ impl StatusbarData {
         }
     }
 
-    pub fn update_battery_result(&mut self, bat: Result<BatteryStatus, Box<dyn Error>>) {
+    pub fn update_battery_result(
+        &mut self,
+        bat: Result<BatteryStatus, Box<dyn Error + Send + Sync>>,
+    ) {
         match bat {
             Ok(status) => self.update_battery(status),
             Err(e) => self.battery = MaybeData(Err(e)),
@@ -77,7 +80,7 @@ impl StatusbarData {
         self.battery = MaybeData(Ok(Some((Instant::now(), bat))))
     }
 
-    pub fn update_timezone_result(&mut self, tz: Result<Tz, Box<dyn Error>>) {
+    pub fn update_timezone_result(&mut self, tz: Result<Tz, Box<dyn Error + Send + Sync>>) {
         match tz {
             Ok(tz) => self.update_timezone(tz),
             Err(e) => self.timezone = MaybeData(Err(e)),

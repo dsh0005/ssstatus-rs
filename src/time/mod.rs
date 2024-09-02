@@ -22,7 +22,9 @@ use chrono_tz::Tz;
 use std::error::Error;
 use std::fmt;
 
-pub struct DateTimeData<Tz: TimeZone>(pub Result<Option<DateTime<Tz>>, Box<dyn Error>>);
+pub struct DateTimeData<Tz: TimeZone>(
+    pub Result<Option<DateTime<Tz>>, Box<dyn Error + Send + Sync>>,
+);
 
 impl fmt::Display for DateTimeData<Tz> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
