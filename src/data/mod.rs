@@ -97,4 +97,12 @@ impl fmt::Display for StatusbarData {
         write!(f, "{} | {}", self.battery, self.time())
     }
 }
+
+pub enum StatusbarChangeCause {
+    NextMinute,
+    TzChange(MaybeData<Tz>),
+    ClockAdjust,
+    BatteryChange(MaybeData<BatteryStatus>),
+}
+
 // TODO: define an RCU structure?

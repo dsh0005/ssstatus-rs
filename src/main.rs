@@ -22,7 +22,8 @@ use dbus::nonblock::stdintf::org_freedesktop_dbus::Properties;
 use dbus::nonblock::{LocalConnection, Proxy};
 use dbus_tokio::connection;
 use std::error::Error;
-use std::io;
+use tokio::io::{self, AsyncWriteExt};
+use tokio::sync::mpsc::{Sender, Receiver};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -30,7 +31,7 @@ mod data;
 mod time;
 
 use crate::data::battery::BatteryStatus;
-use crate::data::StatusbarData;
+use crate::data::{StatusbarData, StatusbarChangeCause};
 use crate::time::wait_till_next_minute;
 
 // TODO: add a place to put realtime clock change detection.
@@ -109,17 +110,32 @@ async fn listen_for_tzchange(
 // then waiting on it. This will involve tokio::io::AsyncRead, or
 // something like that.
 
-async fn update_statusbar(data: Arc<Mutex<StatusbarData>>) -> Result<(), Box<dyn Error>> {
+async fn update_statusbar(data: Arc<Mutex<StatusbarData>>, mut changeQ: Receiver<StatusbarChangeCause>) -> Result<(), Box<dyn Error>> {
     // TODO: get time
     // TODO: calculate top of next minute
     // TODO: sleep until next minute
 
-    // TODO: grab lock on StatusbarData
-    let dat = data.lock().unwrap();
+    loop {
+        // TODO: grab lock on StatusbarData
+        let dat = data.lock().unwrap();
 
-    let stdout = io::stdout();
-    let mut locked = stdout.lock();
+        let newStat = format!("{}\n", dat);
 
+        let mut stdout = io::stdout();
+
+        stdout.write_all(newStat.as_bytes()).await?;
+        stdout.flush().await?;
+
+        match changeQ.recv().await {
+            None => return Ok(()),
+            Some(StatusbarChangeCause::NextMinute) => (),
+            Some(StatusbarChangeCause::ClockAdjust) => (),
+            Some(StatusbarChangeCause::TzChange(mbd)) => {
+            },
+            Some(StatusbarChangeCause::BatteryChange(mbd)) => {
+            },
+        }
+    }
     // TODO: print out status
 
     Ok(())
