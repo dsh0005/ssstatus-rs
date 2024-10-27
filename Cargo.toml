@@ -13,4 +13,4 @@ dbus = "0.9.7"
 dbus-tokio = "0.7.6"
 libc = "0.2"
 timerfd = "1.6.0"
-tokio = { version = "1", features = ["rt", "io-std", "io-util", "net", "sync", "time", "macros", "fs"] }
+tokio = { version = "1", features = ["rt", "io-std", "io-util", "net", "sync", "time", "fs"] }

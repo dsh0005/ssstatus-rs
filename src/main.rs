@@ -23,6 +23,7 @@ use dbus::nonblock::{LocalConnection, Proxy};
 use dbus_tokio::connection;
 use std::error::Error;
 use tokio::io::{self, AsyncWriteExt};
+use tokio::runtime::Builder;
 use tokio::sync::mpsc::{Sender, Receiver};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -168,8 +169,7 @@ async fn setup_system_connection(
     Ok(())
 }
 
-#[tokio::main(flavor = "current_thread")]
-pub async fn main() -> Result<(), Box<dyn Error>> {
+async fn task_setup() -> Result<(), Box<dyn Error>> {
     let local_tasks = tokio::task::LocalSet::new();
 
     // Connect to the system bus, since we want time, battery, &c. info.
@@ -201,4 +201,12 @@ pub async fn main() -> Result<(), Box<dyn Error>> {
     local_tasks.await;
 
     Ok(())
+}
+
+pub fn main() -> Result<(), Box<dyn Error>> {
+    Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap()
+        .block_on(task_setup())
 }
