@@ -205,7 +205,8 @@ async fn task_setup() -> Result<(), Box<dyn Error>> {
 
 pub fn main() -> Result<(), Box<dyn Error>> {
     Builder::new_current_thread()
-        .enable_all()
+        .enable_io()
+        .enable_time()
         .build()
         .unwrap()
         .block_on(task_setup())
