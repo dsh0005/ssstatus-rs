@@ -24,7 +24,7 @@ use dbus_tokio::connection;
 use std::error::Error;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
-use tokio::io::{AsyncWrite, AsyncWriteExt};
+use tokio::io::{self as tokio_io, AsyncWrite, AsyncWriteExt};
 use tokio::runtime::Builder;
 use tokio::sync::mpsc::{Receiver, Sender};
 
@@ -182,6 +182,8 @@ async fn setup_system_connection(
 async fn task_setup() -> Result<(), Box<dyn Error>> {
     let local_tasks = tokio::task::LocalSet::new();
 
+    let ioCtx = Arc::new(StatusbarIOContext::from((tokio_io::stdout(), tokio_io::stderr())));
+
     // Connect to the system bus, since we want time, battery, &c. info.
     let (sys_resource, sys_conn) = connection::new_system_local()?;
 
@@ -203,7 +205,7 @@ async fn task_setup() -> Result<(), Box<dyn Error>> {
     let _upow_connect = local_tasks.spawn_local(listen_to_upower(sys_conn.clone(), sb_dat.clone()));
     let _tz_connect = local_tasks.spawn_local(listen_for_tzchange(sys_conn, sb_dat));
 
-    let _wait_test = local_tasks.spawn_local(wait_till_next_minute());
+    let _wait_test = local_tasks.spawn_local(wait_till_next_minute(ioCtx.clone()));
 
     // TODO: set up the statusbar printer?
 

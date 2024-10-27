@@ -25,3 +25,40 @@ pub struct StatusbarIOContext<SBO: AsyncWrite + Unpin + ?Sized, DO: AsyncWrite +
     pub statusbarOutput: Arc<Mutex<SBO>>,
     pub debugOutput: Arc<Mutex<DO>>,
 }
+
+impl<SBO, DO> From<(SBO, DO)> for StatusbarIOContext<SBO, DO>
+where
+    SBO: AsyncWrite + Unpin,
+    DO: AsyncWrite + Unpin,
+{
+    fn from(value: (SBO, DO)) -> Self {
+        let sbo = Arc::new(Mutex::new(value.0));
+        let dbo = Arc::new(Mutex::new(value.1));
+        Self {
+            statusbarOutput: sbo,
+            debugOutput: dbo,
+        }
+    }
+}
+
+impl<O> From<(O,)> for StatusbarIOContext<O, O>
+where
+    O: AsyncWrite + Unpin,
+{
+    fn from(value: (O,)) -> Self {
+        let o = Arc::new(Mutex::new(value.0));
+        Self {
+            statusbarOutput: o.clone(),
+            debugOutput: o,
+        }
+    }
+}
+
+impl<O> From<O> for StatusbarIOContext<O, O>
+where
+    O: AsyncWrite + Unpin,
+{
+    fn from(value: O) -> Self {
+        StatusbarIOContext::from((value,))
+    }
+}

@@ -39,9 +39,13 @@ impl fmt::Display for DateTimeData<Tz> {
 }
 
 use chrono::{DurationRound, Local, TimeDelta};
+use tokio::io::{AsyncWrite, AsyncWriteExt};
 use tokio::time::sleep;
+use std::sync::Arc;
+use crate::StatusbarIOContext;
 
-pub async fn wait_till_next_minute() -> Result<(), Box<dyn Error>> {
+pub async fn wait_till_next_minute<SBO, DO>(ioCtx: Arc<StatusbarIOContext<SBO, DO>>,) -> Result<(), Box<dyn Error>>
+where SBO: AsyncWrite + Unpin + ?Sized, DO: AsyncWrite + Unpin + ?Sized {
     let start = Local::now();
     let halfMinute = TimeDelta::seconds(30);
     let minute = TimeDelta::minutes(1);
@@ -50,14 +54,23 @@ pub async fn wait_till_next_minute() -> Result<(), Box<dyn Error>> {
     let sleepDuration = nextMinute - start;
     let stdSleepDuration = sleepDuration.to_std()?;
 
-    println!("start wait at {}", start);
-    println!("wait until {}", nextMinute);
-    println!("expected duration {}", sleepDuration);
+    {
+        let mut output = ioCtx.debugOutput.lock().await;
+
+        output.write_all(format!("start wait at {}\nwait until {}\nexpected duration {}\n", start, nextMinute, sleepDuration).as_bytes()).await?;
+        output.flush().await?;
+    }
 
     sleep(stdSleepDuration).await;
 
     let finish = Local::now();
-    println!("finish wait: {}", finish);
+
+    {
+        let mut output = ioCtx.debugOutput.lock().await;
+
+        output.write_all(format!("finish wait: {}", finish).as_bytes()).await?;
+        output.flush().await?;
+    }
 
     Ok(())
 }
