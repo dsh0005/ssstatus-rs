@@ -22,17 +22,19 @@ use dbus::nonblock::stdintf::org_freedesktop_dbus::Properties;
 use dbus::nonblock::{LocalConnection, Proxy};
 use dbus_tokio::connection;
 use std::error::Error;
-use tokio::io::{self, AsyncWriteExt};
-use tokio::runtime::Builder;
-use tokio::sync::mpsc::{Sender, Receiver};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
+use tokio::io::{AsyncWrite, AsyncWriteExt};
+use tokio::runtime::Builder;
+use tokio::sync::mpsc::{Receiver, Sender};
 
 mod data;
+mod io;
 mod time;
 
 use crate::data::battery::BatteryStatus;
-use crate::data::{StatusbarData, StatusbarChangeCause};
+use crate::data::{StatusbarChangeCause, StatusbarData};
+use crate::io::StatusbarIOContext;
 use crate::time::wait_till_next_minute;
 
 // TODO: add a place to put realtime clock change detection.
@@ -111,7 +113,15 @@ async fn listen_for_tzchange(
 // then waiting on it. This will involve tokio::io::AsyncRead, or
 // something like that.
 
-async fn update_statusbar(data: Arc<Mutex<StatusbarData>>, mut changeQ: Receiver<StatusbarChangeCause>) -> Result<(), Box<dyn Error>> {
+async fn update_statusbar<SBO, DO>(
+    data: Arc<Mutex<StatusbarData>>,
+    mut changeQ: Receiver<StatusbarChangeCause>,
+    ioCtx: Arc<StatusbarIOContext<SBO, DO>>,
+) -> Result<(), Box<dyn Error>>
+where
+    SBO: AsyncWrite + Unpin + ?Sized,
+    DO: AsyncWrite + Unpin + ?Sized,
+{
     // TODO: get time
     // TODO: calculate top of next minute
     // TODO: sleep until next minute
@@ -122,19 +132,19 @@ async fn update_statusbar(data: Arc<Mutex<StatusbarData>>, mut changeQ: Receiver
 
         let newStat = format!("{}\n", dat);
 
-        let mut stdout = io::stdout();
+        {
+            let mut output = ioCtx.statusbarOutput.lock().await;
 
-        stdout.write_all(newStat.as_bytes()).await?;
-        stdout.flush().await?;
+            output.write_all(newStat.as_bytes()).await?;
+            output.flush().await?;
+        }
 
         match changeQ.recv().await {
             None => return Ok(()),
             Some(StatusbarChangeCause::NextMinute) => (),
             Some(StatusbarChangeCause::ClockAdjust) => (),
-            Some(StatusbarChangeCause::TzChange(mbd)) => {
-            },
-            Some(StatusbarChangeCause::BatteryChange(mbd)) => {
-            },
+            Some(StatusbarChangeCause::TzChange(mbd)) => {}
+            Some(StatusbarChangeCause::BatteryChange(mbd)) => {}
         }
     }
     // TODO: print out status
