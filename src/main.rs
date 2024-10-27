@@ -153,10 +153,15 @@ where
     Ok(())
 }
 
-async fn setup_system_connection(
+async fn setup_system_connection<SBO, DO>(
     sys_conn: Arc<LocalConnection>,
     data: Arc<Mutex<StatusbarData>>,
-) -> Result<(), Box<dyn Error>> {
+    ioCtx: Arc<tokio_Mutex<StatusbarIOContext<SBO, DO>>>,
+) -> Result<(), Box<dyn Error>>
+where
+    SBO: AsyncWrite + Unpin,
+    DO: AsyncWrite + Unpin,
+{
     // Get a proxy to the bus.
     let bus_proxy = Proxy::new(
         "org.freedesktop.DBus",
@@ -170,9 +175,15 @@ async fn setup_system_connection(
         .method_call("org.freedesktop.DBus", "ListActivatableNames", ())
         .await?;
 
-    // Print all the names.
-    for name in sys_act_names {
-        println!("{}", name);
+    {
+        let output = &mut ioCtx.lock().await.debugOutput;
+
+        // Print all the names.
+        for name in sys_act_names {
+            output.write_all(format!("{}\n", name).as_bytes()).await?;
+        }
+
+        output.flush().await?;
     }
 
     // TODO: make connections to UPower & al. and add matches to subscribe to signals.
@@ -203,8 +214,11 @@ async fn task_setup() -> Result<(), Box<dyn Error>> {
     let sb_dat = Arc::new(Mutex::new(StatusbarData::new()));
 
     // Set up all the listening stuff for the system connection.
-    let _sys_connect =
-        local_tasks.spawn_local(setup_system_connection(sys_conn.clone(), sb_dat.clone()));
+    let _sys_connect = local_tasks.spawn_local(setup_system_connection(
+        sys_conn.clone(),
+        sb_dat.clone(),
+        ioCtx.clone(),
+    ));
 
     let _upow_connect = local_tasks.spawn_local(listen_to_upower(sys_conn.clone(), sb_dat.clone()));
     let _tz_connect = local_tasks.spawn_local(listen_for_tzchange(sys_conn, sb_dat));
