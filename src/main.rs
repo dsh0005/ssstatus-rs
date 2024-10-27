@@ -27,6 +27,7 @@ use std::time::Duration;
 use tokio::io::{self as tokio_io, AsyncWrite, AsyncWriteExt};
 use tokio::runtime::Builder;
 use tokio::sync::mpsc::{Receiver, Sender};
+use tokio::sync::Mutex as tokio_Mutex;
 
 mod data;
 mod io;
@@ -116,11 +117,11 @@ async fn listen_for_tzchange(
 async fn update_statusbar<SBO, DO>(
     data: Arc<Mutex<StatusbarData>>,
     mut changeQ: Receiver<StatusbarChangeCause>,
-    ioCtx: Arc<StatusbarIOContext<SBO, DO>>,
+    ioCtx: Arc<tokio_Mutex<StatusbarIOContext<SBO, DO>>>,
 ) -> Result<(), Box<dyn Error>>
 where
-    SBO: AsyncWrite + Unpin + ?Sized,
-    DO: AsyncWrite + Unpin + ?Sized,
+    SBO: AsyncWrite + Unpin,
+    DO: AsyncWrite + Unpin,
 {
     // TODO: get time
     // TODO: calculate top of next minute
@@ -133,7 +134,7 @@ where
         let newStat = format!("{}\n", dat);
 
         {
-            let mut output = ioCtx.statusbarOutput.lock().await;
+            let output = &mut ioCtx.lock().await.statusbarOutput;
 
             output.write_all(newStat.as_bytes()).await?;
             output.flush().await?;
@@ -182,7 +183,10 @@ async fn setup_system_connection(
 async fn task_setup() -> Result<(), Box<dyn Error>> {
     let local_tasks = tokio::task::LocalSet::new();
 
-    let ioCtx = Arc::new(StatusbarIOContext::from((tokio_io::stdout(), tokio_io::stderr())));
+    let ioCtx = Arc::new(tokio_Mutex::new(StatusbarIOContext::from((
+        tokio_io::stdout(),
+        tokio_io::stderr(),
+    ))));
 
     // Connect to the system bus, since we want time, battery, &c. info.
     let (sys_resource, sys_conn) = connection::new_system_local()?;

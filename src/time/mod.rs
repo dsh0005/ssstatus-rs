@@ -38,14 +38,20 @@ impl fmt::Display for DateTimeData<Tz> {
     }
 }
 
-use chrono::{DurationRound, Local, TimeDelta};
-use tokio::io::{AsyncWrite, AsyncWriteExt};
-use tokio::time::sleep;
-use std::sync::Arc;
 use crate::StatusbarIOContext;
+use chrono::{DurationRound, Local, TimeDelta};
+use std::sync::Arc;
+use tokio::io::{AsyncWrite, AsyncWriteExt};
+use tokio::sync::Mutex;
+use tokio::time::sleep;
 
-pub async fn wait_till_next_minute<SBO, DO>(ioCtx: Arc<StatusbarIOContext<SBO, DO>>,) -> Result<(), Box<dyn Error>>
-where SBO: AsyncWrite + Unpin + ?Sized, DO: AsyncWrite + Unpin + ?Sized {
+pub async fn wait_till_next_minute<SBO, DO>(
+    ioCtx: Arc<Mutex<StatusbarIOContext<SBO, DO>>>,
+) -> Result<(), Box<dyn Error>>
+where
+    SBO: AsyncWrite + Unpin,
+    DO: AsyncWrite + Unpin,
+{
     let start = Local::now();
     let halfMinute = TimeDelta::seconds(30);
     let minute = TimeDelta::minutes(1);
@@ -55,9 +61,17 @@ where SBO: AsyncWrite + Unpin + ?Sized, DO: AsyncWrite + Unpin + ?Sized {
     let stdSleepDuration = sleepDuration.to_std()?;
 
     {
-        let mut output = ioCtx.debugOutput.lock().await;
+        let output = &mut ioCtx.lock().await.debugOutput;
 
-        output.write_all(format!("start wait at {}\nwait until {}\nexpected duration {}\n", start, nextMinute, sleepDuration).as_bytes()).await?;
+        output
+            .write_all(
+                format!(
+                    "start wait at {}\nwait until {}\nexpected duration {}\n",
+                    start, nextMinute, sleepDuration
+                )
+                .as_bytes(),
+            )
+            .await?;
         output.flush().await?;
     }
 
@@ -66,9 +80,11 @@ where SBO: AsyncWrite + Unpin + ?Sized, DO: AsyncWrite + Unpin + ?Sized {
     let finish = Local::now();
 
     {
-        let mut output = ioCtx.debugOutput.lock().await;
+        let output = &mut ioCtx.lock().await.debugOutput;
 
-        output.write_all(format!("finish wait: {}", finish).as_bytes()).await?;
+        output
+            .write_all(format!("finish wait: {}\n", finish).as_bytes())
+            .await?;
         output.flush().await?;
     }
 

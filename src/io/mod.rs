@@ -21,9 +21,9 @@ use std::sync::Arc;
 use tokio::io::AsyncWrite;
 use tokio::sync::Mutex;
 
-pub struct StatusbarIOContext<SBO: AsyncWrite + Unpin + ?Sized, DO: AsyncWrite + Unpin + ?Sized> {
-    pub statusbarOutput: Arc<Mutex<SBO>>,
-    pub debugOutput: Arc<Mutex<DO>>,
+pub struct StatusbarIOContext<SBO: AsyncWrite + Unpin, DO: AsyncWrite + Unpin> {
+    pub statusbarOutput: SBO,
+    pub debugOutput: DO,
 }
 
 impl<SBO, DO> From<(SBO, DO)> for StatusbarIOContext<SBO, DO>
@@ -32,31 +32,28 @@ where
     DO: AsyncWrite + Unpin,
 {
     fn from(value: (SBO, DO)) -> Self {
-        let sbo = Arc::new(Mutex::new(value.0));
-        let dbo = Arc::new(Mutex::new(value.1));
         Self {
-            statusbarOutput: sbo,
-            debugOutput: dbo,
+            statusbarOutput: value.0,
+            debugOutput: value.1,
         }
     }
 }
 
 impl<O> From<(O,)> for StatusbarIOContext<O, O>
 where
-    O: AsyncWrite + Unpin,
+    O: AsyncWrite + Unpin + Clone,
 {
     fn from(value: (O,)) -> Self {
-        let o = Arc::new(Mutex::new(value.0));
         Self {
-            statusbarOutput: o.clone(),
-            debugOutput: o,
+            statusbarOutput: value.0.clone(),
+            debugOutput: value.0,
         }
     }
 }
 
 impl<O> From<O> for StatusbarIOContext<O, O>
 where
-    O: AsyncWrite + Unpin,
+    O: AsyncWrite + Unpin + Clone,
 {
     fn from(value: O) -> Self {
         StatusbarIOContext::from((value,))
