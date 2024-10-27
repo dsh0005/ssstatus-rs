@@ -99,9 +99,16 @@ impl fmt::Display for StatusbarData {
 }
 
 pub enum StatusbarChangeCause {
+    // We're at the next minute.
     NextMinute,
+
+    // The timezone changed.
     TzChange(MaybeData<Tz>),
+
+    // The clock was (maybe) adjusted.
     ClockAdjust,
+
+    // The battery status changed.
     BatteryChange(MaybeData<BatteryStatus>),
 }
 

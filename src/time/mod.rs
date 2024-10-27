@@ -77,9 +77,12 @@ fn get_abs_utc_time_in_future(time: TimeDelta) -> Result<std::time::Duration, Bo
 }
 
 pub async fn wait_till_time_change() -> Result<(), Box<dyn Error>> {
-    // The timerfd crate make TCOS imply Abstime.
+    // The timerfd crate makes the TCOS flag imply the Abstime flag.
     let listen_flags = SetTimeFlags::TimerCancelOnSet;
 
+    // We need to choose some time in the future to wait on, that's
+    // just how timerfd TCOS works. So choose something silly
+    // infrequent.
     let wait_far_into_future =
         TimerState::Oneshot(get_abs_utc_time_in_future(TimeDelta::weeks(1))?);
 
