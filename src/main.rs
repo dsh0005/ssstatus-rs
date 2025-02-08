@@ -23,7 +23,7 @@ use dbus::nonblock::{LocalConnection, Proxy};
 use dbus_tokio::connection;
 use std::error::Error;
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tokio::io::{self as tokio_io, AsyncWrite, AsyncWriteExt};
 use tokio::runtime::Builder;
 use tokio::sync::mpsc::{channel, Receiver, Sender};
@@ -34,7 +34,7 @@ mod io;
 mod time;
 
 use crate::data::battery::BatteryStatus;
-use crate::data::{StatusbarChangeCause, StatusbarData};
+use crate::data::{MaybeData, StatusbarChangeCause, StatusbarData};
 use crate::io::StatusbarIOContext;
 use crate::time::{wait_till_next_minute, wait_till_time_change};
 
@@ -43,6 +43,7 @@ use crate::time::{wait_till_next_minute, wait_till_time_change};
 async fn listen_to_upower(
     sys_conn: Arc<LocalConnection>,
     data: Arc<Mutex<StatusbarData>>,
+    changeQ: Sender<StatusbarChangeCause>,
 ) -> Result<(), Box<dyn Error>> {
     let upower_proxy = Proxy::new(
         "org.freedesktop.UPower",
@@ -55,6 +56,7 @@ async fn listen_to_upower(
     let start_pct = upower_proxy
         .get::<f64>("org.freedesktop.UPower.Device", "Percentage")
         .await?;
+    let got_bat_when = Instant::now();
 
     // Set the start percentage.
     {
@@ -63,6 +65,13 @@ async fn listen_to_upower(
             percentage: start_pct,
         });
     }
+
+    changeQ
+        .send(StatusbarChangeCause::BatteryChange(MaybeData(Ok(Some((
+            got_bat_when,
+            BatteryStatus::from(start_pct),
+        ))))))
+        .await?;
 
     // TODO: remove
     println!("starting battery: {}%", start_pct);
@@ -77,6 +86,7 @@ async fn listen_to_upower(
 async fn listen_for_tzchange(
     sys_conn: Arc<LocalConnection>,
     data: Arc<Mutex<StatusbarData>>,
+    changeQ: Sender<StatusbarChangeCause>,
 ) -> Result<(), Box<dyn Error>> {
     let timedate_proxy = Proxy::new(
         "org.freedesktop.timedate1",
@@ -86,16 +96,24 @@ async fn listen_for_tzchange(
     );
 
     // Get the starting TZ.
-    let start_tz = timedate_proxy
+    let start_tz_str = timedate_proxy
         .get::<String>("org.freedesktop.timedate1", "Timezone")
-        .await?
-        .parse::<Tz>()?;
+        .await?;
+    let got_tz_when = Instant::now();
+    let start_tz = start_tz_str.parse::<Tz>()?;
 
     // Set the starting TZ.
     {
         let mut dat = data.lock().unwrap();
         dat.update_timezone(start_tz);
     }
+
+    changeQ
+        .send(StatusbarChangeCause::TzChange(MaybeData(Ok(Some((
+            got_tz_when,
+            start_tz,
+        ))))))
+        .await?;
 
     // TODO: remove
     println!("starting TZ: {}", start_tz);
@@ -153,9 +171,8 @@ where
 
     loop {
         // TODO: grab lock on StatusbarData
-        let dat = data.lock().unwrap();
 
-        let newStat = format!("{}\n", dat);
+        let newStat = format!("{}\n", data.lock().unwrap());
 
         {
             let output = &mut ioCtx.lock().await.statusbarOutput;
@@ -166,10 +183,7 @@ where
 
         match changeQ.recv().await {
             None => return Ok(()),
-            Some(StatusbarChangeCause::NextMinute) => {},
-            Some(StatusbarChangeCause::ClockAdjust) => {},
-            Some(StatusbarChangeCause::TzChange(mbd)) => {},
-            Some(StatusbarChangeCause::BatteryChange(mbd)) => {},
+            Some(_) => {}
         }
     }
     // TODO: print out status
@@ -244,8 +258,13 @@ async fn task_setup() -> Result<(), Box<dyn Error>> {
 
     let (tx, mut rx) = channel(32);
 
-    let _upow_connect = local_tasks.spawn_local(listen_to_upower(sys_conn.clone(), sb_dat.clone()));
-    let _tz_connect = local_tasks.spawn_local(listen_for_tzchange(sys_conn, sb_dat.clone()));
+    let _upow_connect = local_tasks.spawn_local(listen_to_upower(
+        sys_conn.clone(),
+        sb_dat.clone(),
+        tx.clone(),
+    ));
+    let _tz_connect =
+        local_tasks.spawn_local(listen_for_tzchange(sys_conn, sb_dat.clone(), tx.clone()));
 
     let _tick_minute = local_tasks.spawn_local(fire_on_next_minute(tx.clone(), ioCtx.clone()));
     let _listen_adj = local_tasks.spawn_local(fire_on_clock_change(tx));

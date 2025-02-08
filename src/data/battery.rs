@@ -28,3 +28,11 @@ impl fmt::Display for BatteryStatus {
         write!(f, "{}%", self.percentage)
     }
 }
+
+impl From<f64> for BatteryStatus {
+    fn from(percentage: f64) -> Self {
+        BatteryStatus {
+            percentage: percentage,
+        }
+    }
+}
