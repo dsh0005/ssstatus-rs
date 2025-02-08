@@ -26,7 +26,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio::io::{self as tokio_io, AsyncWrite, AsyncWriteExt};
 use tokio::runtime::Builder;
-use tokio::sync::mpsc::{Receiver, Sender};
+use tokio::sync::mpsc::{channel, Receiver, Sender};
 use tokio::sync::Mutex as tokio_Mutex;
 
 mod data;
@@ -36,7 +36,7 @@ mod time;
 use crate::data::battery::BatteryStatus;
 use crate::data::{StatusbarChangeCause, StatusbarData};
 use crate::io::StatusbarIOContext;
-use crate::time::wait_till_next_minute;
+use crate::time::{wait_till_next_minute, wait_till_time_change};
 
 // TODO: add a place to put realtime clock change detection.
 
@@ -107,6 +107,31 @@ async fn listen_for_tzchange(
     Ok(())
 }
 
+async fn fire_on_next_minute<SBO, DO>(
+    changeQ: Sender<StatusbarChangeCause>,
+    ioCtx: Arc<tokio_Mutex<StatusbarIOContext<SBO, DO>>>,
+) -> Result<(), Box<dyn Error>>
+where
+    SBO: AsyncWrite + Unpin,
+    DO: AsyncWrite + Unpin,
+{
+    // TODO this should return Result<!, ...>
+
+    loop {
+        wait_till_next_minute(ioCtx.clone()).await?;
+        changeQ.send(StatusbarChangeCause::NextMinute).await?;
+    }
+}
+
+async fn fire_on_clock_change(changeQ: Sender<StatusbarChangeCause>) -> Result<(), Box<dyn Error>> {
+    // TODO this should return Result<!, ...>
+
+    loop {
+        wait_till_time_change().await?;
+        changeQ.send(StatusbarChangeCause::ClockAdjust).await?;
+    }
+}
+
 // TODO: async for listening for time change
 // This involves creating a timerfd with TFD_TIMER_CANCEL_ON_SET set,
 // then waiting on it. This will involve tokio::io::AsyncRead, or
@@ -121,6 +146,7 @@ where
     SBO: AsyncWrite + Unpin,
     DO: AsyncWrite + Unpin,
 {
+    // TODO this should return Result<!, ...>
     // TODO: get time
     // TODO: calculate top of next minute
     // TODO: sleep until next minute
@@ -140,15 +166,13 @@ where
 
         match changeQ.recv().await {
             None => return Ok(()),
-            Some(StatusbarChangeCause::NextMinute) => (),
-            Some(StatusbarChangeCause::ClockAdjust) => (),
-            Some(StatusbarChangeCause::TzChange(mbd)) => {}
-            Some(StatusbarChangeCause::BatteryChange(mbd)) => {}
+            Some(StatusbarChangeCause::NextMinute) => {},
+            Some(StatusbarChangeCause::ClockAdjust) => {},
+            Some(StatusbarChangeCause::TzChange(mbd)) => {},
+            Some(StatusbarChangeCause::BatteryChange(mbd)) => {},
         }
     }
     // TODO: print out status
-
-    Ok(())
 }
 
 async fn setup_system_connection<SBO, DO>(
@@ -218,10 +242,15 @@ async fn task_setup() -> Result<(), Box<dyn Error>> {
         ioCtx.clone(),
     ));
 
-    let _upow_connect = local_tasks.spawn_local(listen_to_upower(sys_conn.clone(), sb_dat.clone()));
-    let _tz_connect = local_tasks.spawn_local(listen_for_tzchange(sys_conn, sb_dat));
+    let (tx, mut rx) = channel(32);
 
-    let _wait_test = local_tasks.spawn_local(wait_till_next_minute(ioCtx.clone()));
+    let _upow_connect = local_tasks.spawn_local(listen_to_upower(sys_conn.clone(), sb_dat.clone()));
+    let _tz_connect = local_tasks.spawn_local(listen_for_tzchange(sys_conn, sb_dat.clone()));
+
+    let _tick_minute = local_tasks.spawn_local(fire_on_next_minute(tx.clone(), ioCtx.clone()));
+    let _listen_adj = local_tasks.spawn_local(fire_on_clock_change(tx));
+
+    let _update_stat = local_tasks.spawn_local(update_statusbar(sb_dat, rx, ioCtx));
 
     // TODO: set up the statusbar printer?
 
