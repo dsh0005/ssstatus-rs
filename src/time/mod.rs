@@ -122,9 +122,7 @@ pub async fn wait_till_time_change() -> Result<(), Box<dyn Error>> {
     loop {
         match tok_afd.readable_mut().await {
             Ok(mut guard) => {
-                let mut panic_cause = Option::<Box<dyn Any + Send>>::None;
-
-                guard.try_io(|tim: &mut AsyncFd<TimerFd>| {
+                let read_res = guard.try_io(|tim: &mut AsyncFd<TimerFd>| {
                     let mut t = &tim.get_mut();
                     match panic::catch_unwind(|| t.read()) {
                         Ok(0) => io::Result::Err(std::io::ErrorKind::WouldBlock.into()),
@@ -140,7 +138,6 @@ pub async fn wait_till_time_change() -> Result<(), Box<dyn Error>> {
                                     return Ok(true);
                                 }
                             }
-                            panic_cause = Some(cause);
                             io::Result::Err(io::Error::other(
                                 "some panic from timerfd::TimerFd::read()",
                             ))
@@ -148,19 +145,32 @@ pub async fn wait_till_time_change() -> Result<(), Box<dyn Error>> {
                     }
                 });
 
-                if let Some(cause) = panic_cause {
-                    panic::resume_unwind(cause);
+                match read_res {
+                    Err(_) => {
+                        // Good! Wait some more!
+                    }
+                    Ok(Ok(true)) => {
+                        // The clock got changed.
+                        return Ok(());
+                    }
+                    Ok(Ok(false)) => {
+                        // The timer expired, and _we_ need to set it farther out in the
+                        // future.
+                        guard.get_inner_mut().set_state(
+                            TimerState::Oneshot(get_abs_utc_time_in_future(TimeDelta::weeks(1))?),
+                            listen_flags.clone(),
+                        );
+                        // Circle back around.
+                    }
+                    Ok(Err(e)) => {
+                        return Err(Box::new(e));
+                    }
                 }
-
-                guard.get_inner_mut().set_state(
-                    TimerState::Oneshot(get_abs_utc_time_in_future(TimeDelta::weeks(1))?),
-                    listen_flags.clone(),
-                );
-                // TODO: set the timer further in the future
             }
             Err(e) => match e.raw_os_error() {
                 None => {
                     // TODO: log? panic?
+                    return Err(Box::new(e));
                 }
                 Some(ose) => match ose {
                     ECANCELED => {
@@ -169,11 +179,10 @@ pub async fn wait_till_time_change() -> Result<(), Box<dyn Error>> {
                     }
                     _ => {
                         // TODO: log? panic?
+                        return Err(Box::new(e));
                     }
                 },
             },
         }
     }
-
-    Ok(())
 }

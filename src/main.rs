@@ -39,8 +39,6 @@ use crate::io::StatusbarIOContext;
 use crate::time::wait_till_next_minute;
 
 // TODO: add a place to put realtime clock change detection.
-// TODO: use timerfd crate
-// TODO: wrap it with tokio::io::unix::AsyncFd?
 
 async fn listen_to_upower(
     sys_conn: Arc<LocalConnection>,
