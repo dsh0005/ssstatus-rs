@@ -22,7 +22,7 @@ use dbus::nonblock::stdintf::org_freedesktop_dbus::Properties;
 use dbus::nonblock::{LocalConnection, Proxy};
 use dbus_tokio::connection;
 use std::error::Error;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::io::{self as tokio_io, AsyncWrite, AsyncWriteExt};
 use tokio::runtime::Builder;
@@ -34,7 +34,8 @@ mod io;
 mod time;
 
 use crate::data::battery::BatteryStatus;
-use crate::data::{MaybeData, StatusbarChangeCause, StatusbarData};
+use crate::data::StatusbarChangeCause::{self, BatteryChange, TzChange};
+use crate::data::{MaybeData, StatusbarData};
 use crate::io::StatusbarIOContext;
 use crate::time::{wait_till_next_minute, wait_till_time_change, ClockChangedCallback};
 
@@ -42,7 +43,6 @@ use crate::time::{wait_till_next_minute, wait_till_time_change, ClockChangedCall
 
 async fn listen_to_upower(
     sys_conn: Arc<LocalConnection>,
-    data: Arc<Mutex<StatusbarData>>,
     change_q: Sender<StatusbarChangeCause>,
 ) -> Result<(), Box<dyn Error>> {
     let upower_proxy = Proxy::new(
@@ -57,14 +57,6 @@ async fn listen_to_upower(
         .get::<f64>("org.freedesktop.UPower.Device", "Percentage")
         .await?;
     let got_bat_when = Instant::now();
-
-    // Set the start percentage.
-    {
-        let mut dat = data.lock().unwrap();
-        dat.update_battery(BatteryStatus {
-            percentage: start_pct,
-        });
-    }
 
     change_q
         .send(StatusbarChangeCause::BatteryChange(MaybeData(Ok(Some((
@@ -82,7 +74,6 @@ async fn listen_to_upower(
 
 async fn listen_for_tzchange(
     sys_conn: Arc<LocalConnection>,
-    data: Arc<Mutex<StatusbarData>>,
     change_q: Sender<StatusbarChangeCause>,
 ) -> Result<(), Box<dyn Error>> {
     let timedate_proxy = Proxy::new(
@@ -98,12 +89,6 @@ async fn listen_for_tzchange(
         .await?;
     let got_tz_when = Instant::now();
     let start_tz = start_tz_str.parse::<Tz>()?;
-
-    // Set the starting TZ.
-    {
-        let mut dat = data.lock().unwrap();
-        dat.update_timezone(start_tz);
-    }
 
     change_q
         .send(StatusbarChangeCause::TzChange(MaybeData(Ok(Some((
@@ -169,7 +154,6 @@ async fn fire_on_clock_change(
 // something like that.
 
 async fn update_statusbar<SBO, DO>(
-    data: Arc<Mutex<StatusbarData>>,
     mut change_q: Receiver<StatusbarChangeCause>,
     io_ctx: Arc<tokio_Mutex<StatusbarIOContext<SBO, DO>>>,
 ) -> Result<(), Box<dyn Error>>
@@ -182,10 +166,10 @@ where
     // TODO: calculate top of next minute
     // TODO: sleep until next minute
 
-    loop {
-        // TODO: grab lock on StatusbarData
+    let mut data = StatusbarData::new();
 
-        let new_stat = format!("{}\n", data.lock().unwrap());
+    loop {
+        let new_stat = format!("{}\n", data);
 
         {
             let output = &mut io_ctx.lock().await.statusbar_output;
@@ -194,16 +178,23 @@ where
             output.flush().await?;
         }
 
-        if let None = change_q.recv().await {
-            return Ok(());
+        match change_q.recv().await {
+            Some(TzChange(tz_change)) => {
+                data.update_timezone_maybedata(tz_change);
+            }
+            Some(BatteryChange(bat_change)) => {
+                data.update_battery_maybedata(bat_change);
+            }
+            Some(_) => {}
+            None => {
+                return Ok(());
+            }
         }
     }
-    // TODO: print out status
 }
 
 async fn setup_system_connection<SBO, DO>(
     sys_conn: Arc<LocalConnection>,
-    data: Arc<Mutex<StatusbarData>>,
     io_ctx: Arc<tokio_Mutex<StatusbarIOContext<SBO, DO>>>,
 ) -> Result<(), Box<dyn Error>>
 where
@@ -258,30 +249,19 @@ async fn task_setup() -> Result<(), Box<dyn Error>> {
         panic!("Lost connection to system D-Bus: {}", err);
     });
 
-    // TODO: proper lifetime management
-    let sb_dat = Arc::new(Mutex::new(StatusbarData::new()));
-
     // Set up all the listening stuff for the system connection.
-    let _sys_connect = local_tasks.spawn_local(setup_system_connection(
-        sys_conn.clone(),
-        sb_dat.clone(),
-        io_ctx.clone(),
-    ));
+    let _sys_connect =
+        local_tasks.spawn_local(setup_system_connection(sys_conn.clone(), io_ctx.clone()));
 
     let (tx, rx) = channel(32);
 
-    let _upow_connect = local_tasks.spawn_local(listen_to_upower(
-        sys_conn.clone(),
-        sb_dat.clone(),
-        tx.clone(),
-    ));
-    let _tz_connect =
-        local_tasks.spawn_local(listen_for_tzchange(sys_conn, sb_dat.clone(), tx.clone()));
+    let _upow_connect = local_tasks.spawn_local(listen_to_upower(sys_conn.clone(), tx.clone()));
+    let _tz_connect = local_tasks.spawn_local(listen_for_tzchange(sys_conn, tx.clone()));
 
     let _tick_minute = local_tasks.spawn_local(fire_on_next_minute(tx.clone(), io_ctx.clone()));
     let _listen_adj = local_tasks.spawn_local(fire_on_clock_change(tx));
 
-    let _update_stat = local_tasks.spawn_local(update_statusbar(sb_dat, rx, io_ctx));
+    let _update_stat = local_tasks.spawn_local(update_statusbar(rx, io_ctx));
 
     // TODO: set up the statusbar printer?
 

@@ -66,6 +66,10 @@ impl StatusbarData {
         }
     }
 
+    pub fn update_battery_maybedata(&mut self, bat: MaybeData<BatteryStatus>) {
+        self.battery = bat;
+    }
+
     pub fn update_battery_result(
         &mut self,
         bat: Result<BatteryStatus, Box<dyn Error + Send + Sync>>,
@@ -78,6 +82,10 @@ impl StatusbarData {
 
     pub fn update_battery(&mut self, bat: BatteryStatus) {
         self.battery = MaybeData(Ok(Some((Instant::now(), bat))))
+    }
+
+    pub fn update_timezone_maybedata(&mut self, tz: MaybeData<Tz>) {
+        self.timezone = tz;
     }
 
     pub fn update_timezone_result(&mut self, tz: Result<Tz, Box<dyn Error + Send + Sync>>) {
