@@ -46,28 +46,28 @@ use tokio::sync::Mutex;
 use tokio::time::sleep;
 
 pub async fn wait_till_next_minute<SBO, DO>(
-    ioCtx: Arc<Mutex<StatusbarIOContext<SBO, DO>>>,
+    io_ctx: Arc<Mutex<StatusbarIOContext<SBO, DO>>>,
 ) -> Result<(), Box<dyn Error>>
 where
     SBO: AsyncWrite + Unpin,
     DO: AsyncWrite + Unpin,
 {
     let start = Local::now();
-    let halfMinute = TimeDelta::seconds(30);
+    let half_minute = TimeDelta::seconds(30);
     let minute = TimeDelta::minutes(1);
-    let nextMinute = (start + halfMinute).duration_round(minute)?;
+    let next_minute = (start + half_minute).duration_round(minute)?;
 
-    let sleepDuration = nextMinute - start;
-    let stdSleepDuration = sleepDuration.to_std()?;
+    let sleep_duration = next_minute - start;
+    let std_sleep_duration = sleep_duration.to_std()?;
 
     {
-        let output = &mut ioCtx.lock().await.debugOutput;
+        let output = &mut io_ctx.lock().await.debug_output;
 
         output
             .write_all(
                 format!(
                     "start wait at {}\nwait until {}\nexpected duration {}\n",
-                    start, nextMinute, sleepDuration
+                    start, next_minute, sleep_duration
                 )
                 .as_bytes(),
             )
@@ -75,12 +75,12 @@ where
         output.flush().await?;
     }
 
-    sleep(stdSleepDuration).await;
+    sleep(std_sleep_duration).await;
 
     let finish = Local::now();
 
     {
-        let output = &mut ioCtx.lock().await.debugOutput;
+        let output = &mut io_ctx.lock().await.debug_output;
 
         output
             .write_all(format!("finish wait: {}\n", finish).as_bytes())

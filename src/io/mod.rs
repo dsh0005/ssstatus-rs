@@ -20,8 +20,8 @@
 use tokio::io::AsyncWrite;
 
 pub struct StatusbarIOContext<SBO: AsyncWrite + Unpin, DO: AsyncWrite + Unpin> {
-    pub statusbarOutput: SBO,
-    pub debugOutput: DO,
+    pub statusbar_output: SBO,
+    pub debug_output: DO,
 }
 
 impl<SBO, DO> From<(SBO, DO)> for StatusbarIOContext<SBO, DO>
@@ -31,8 +31,8 @@ where
 {
     fn from(value: (SBO, DO)) -> Self {
         Self {
-            statusbarOutput: value.0,
-            debugOutput: value.1,
+            statusbar_output: value.0,
+            debug_output: value.1,
         }
     }
 }
@@ -43,8 +43,8 @@ where
 {
     fn from(value: (O,)) -> Self {
         Self {
-            statusbarOutput: value.0.clone(),
-            debugOutput: value.0,
+            statusbar_output: value.0.clone(),
+            debug_output: value.0,
         }
     }
 }

@@ -43,7 +43,7 @@ use crate::time::{wait_till_next_minute, wait_till_time_change, ClockChangedCall
 async fn listen_to_upower(
     sys_conn: Arc<LocalConnection>,
     data: Arc<Mutex<StatusbarData>>,
-    changeQ: Sender<StatusbarChangeCause>,
+    change_q: Sender<StatusbarChangeCause>,
 ) -> Result<(), Box<dyn Error>> {
     let upower_proxy = Proxy::new(
         "org.freedesktop.UPower",
@@ -66,7 +66,7 @@ async fn listen_to_upower(
         });
     }
 
-    changeQ
+    change_q
         .send(StatusbarChangeCause::BatteryChange(MaybeData(Ok(Some((
             got_bat_when,
             BatteryStatus::from(start_pct),
@@ -83,7 +83,7 @@ async fn listen_to_upower(
 async fn listen_for_tzchange(
     sys_conn: Arc<LocalConnection>,
     data: Arc<Mutex<StatusbarData>>,
-    changeQ: Sender<StatusbarChangeCause>,
+    change_q: Sender<StatusbarChangeCause>,
 ) -> Result<(), Box<dyn Error>> {
     let timedate_proxy = Proxy::new(
         "org.freedesktop.timedate1",
@@ -105,7 +105,7 @@ async fn listen_for_tzchange(
         dat.update_timezone(start_tz);
     }
 
-    changeQ
+    change_q
         .send(StatusbarChangeCause::TzChange(MaybeData(Ok(Some((
             got_tz_when,
             start_tz,
@@ -120,8 +120,8 @@ async fn listen_for_tzchange(
 }
 
 async fn fire_on_next_minute<SBO, DO>(
-    changeQ: Sender<StatusbarChangeCause>,
-    ioCtx: Arc<tokio_Mutex<StatusbarIOContext<SBO, DO>>>,
+    change_q: Sender<StatusbarChangeCause>,
+    io_ctx: Arc<tokio_Mutex<StatusbarIOContext<SBO, DO>>>,
 ) -> Result<(), Box<dyn Error>>
 where
     SBO: AsyncWrite + Unpin,
@@ -130,30 +130,36 @@ where
     // TODO this should return Result<!, ...>
 
     loop {
-        wait_till_next_minute(ioCtx.clone()).await?;
-        changeQ.send(StatusbarChangeCause::NextMinute).await?;
+        wait_till_next_minute(io_ctx.clone()).await?;
+        change_q.send(StatusbarChangeCause::NextMinute).await?;
     }
 }
 
 struct TreatPossibleChangesConservatively<'a> {
-    changeQ: &'a Sender<StatusbarChangeCause>,
+    change_q: &'a Sender<StatusbarChangeCause>,
 }
 
 impl ClockChangedCallback for TreatPossibleChangesConservatively<'_> {
     async fn clock_change_maybe_lost(&self) -> Result<(), Box<dyn Error>> {
-        self.changeQ.send(StatusbarChangeCause::ClockAdjust).await?;
+        self.change_q
+            .send(StatusbarChangeCause::ClockAdjust)
+            .await?;
         Ok(())
     }
 }
 
-async fn fire_on_clock_change(changeQ: Sender<StatusbarChangeCause>) -> Result<(), Box<dyn Error>> {
+async fn fire_on_clock_change(
+    change_q: Sender<StatusbarChangeCause>,
+) -> Result<(), Box<dyn Error>> {
     // TODO this should return Result<!, ...>
 
-    let cb = TreatPossibleChangesConservatively { changeQ: &changeQ };
+    let cb = TreatPossibleChangesConservatively {
+        change_q: &change_q,
+    };
 
     loop {
         wait_till_time_change(&cb).await?;
-        changeQ.send(StatusbarChangeCause::ClockAdjust).await?;
+        change_q.send(StatusbarChangeCause::ClockAdjust).await?;
     }
 }
 
@@ -164,8 +170,8 @@ async fn fire_on_clock_change(changeQ: Sender<StatusbarChangeCause>) -> Result<(
 
 async fn update_statusbar<SBO, DO>(
     data: Arc<Mutex<StatusbarData>>,
-    mut changeQ: Receiver<StatusbarChangeCause>,
-    ioCtx: Arc<tokio_Mutex<StatusbarIOContext<SBO, DO>>>,
+    mut change_q: Receiver<StatusbarChangeCause>,
+    io_ctx: Arc<tokio_Mutex<StatusbarIOContext<SBO, DO>>>,
 ) -> Result<(), Box<dyn Error>>
 where
     SBO: AsyncWrite + Unpin,
@@ -179,16 +185,16 @@ where
     loop {
         // TODO: grab lock on StatusbarData
 
-        let newStat = format!("{}\n", data.lock().unwrap());
+        let new_stat = format!("{}\n", data.lock().unwrap());
 
         {
-            let output = &mut ioCtx.lock().await.statusbarOutput;
+            let output = &mut io_ctx.lock().await.statusbar_output;
 
-            output.write_all(newStat.as_bytes()).await?;
+            output.write_all(new_stat.as_bytes()).await?;
             output.flush().await?;
         }
 
-        if let None = changeQ.recv().await {
+        if let None = change_q.recv().await {
             return Ok(());
         }
     }
@@ -198,7 +204,7 @@ where
 async fn setup_system_connection<SBO, DO>(
     sys_conn: Arc<LocalConnection>,
     data: Arc<Mutex<StatusbarData>>,
-    ioCtx: Arc<tokio_Mutex<StatusbarIOContext<SBO, DO>>>,
+    io_ctx: Arc<tokio_Mutex<StatusbarIOContext<SBO, DO>>>,
 ) -> Result<(), Box<dyn Error>>
 where
     SBO: AsyncWrite + Unpin,
@@ -218,7 +224,7 @@ where
         .await?;
 
     {
-        let output = &mut ioCtx.lock().await.debugOutput;
+        let output = &mut io_ctx.lock().await.debug_output;
 
         // Print all the names.
         for name in sys_act_names {
@@ -236,7 +242,7 @@ where
 async fn task_setup() -> Result<(), Box<dyn Error>> {
     let local_tasks = tokio::task::LocalSet::new();
 
-    let ioCtx = Arc::new(tokio_Mutex::new(StatusbarIOContext::from((
+    let io_ctx = Arc::new(tokio_Mutex::new(StatusbarIOContext::from((
         tokio_io::stdout(),
         tokio_io::stderr(),
     ))));
@@ -259,7 +265,7 @@ async fn task_setup() -> Result<(), Box<dyn Error>> {
     let _sys_connect = local_tasks.spawn_local(setup_system_connection(
         sys_conn.clone(),
         sb_dat.clone(),
-        ioCtx.clone(),
+        io_ctx.clone(),
     ));
 
     let (tx, rx) = channel(32);
@@ -272,10 +278,10 @@ async fn task_setup() -> Result<(), Box<dyn Error>> {
     let _tz_connect =
         local_tasks.spawn_local(listen_for_tzchange(sys_conn, sb_dat.clone(), tx.clone()));
 
-    let _tick_minute = local_tasks.spawn_local(fire_on_next_minute(tx.clone(), ioCtx.clone()));
+    let _tick_minute = local_tasks.spawn_local(fire_on_next_minute(tx.clone(), io_ctx.clone()));
     let _listen_adj = local_tasks.spawn_local(fire_on_clock_change(tx));
 
-    let _update_stat = local_tasks.spawn_local(update_statusbar(sb_dat, rx, ioCtx));
+    let _update_stat = local_tasks.spawn_local(update_statusbar(sb_dat, rx, io_ctx));
 
     // TODO: set up the statusbar printer?
 
