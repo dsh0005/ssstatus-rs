@@ -73,9 +73,6 @@ async fn listen_to_upower(
         ))))))
         .await?;
 
-    // TODO: remove
-    println!("starting battery: {}%", start_pct);
-
     // TODO: add match
     // TODO: update data
     // TODO: schedule refresh
@@ -114,9 +111,6 @@ async fn listen_for_tzchange(
             start_tz,
         ))))))
         .await?;
-
-    // TODO: remove
-    println!("starting TZ: {}", start_tz);
 
     // TODO: add match for TZ change
     // TODO: update data
