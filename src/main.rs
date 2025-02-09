@@ -36,7 +36,7 @@ mod time;
 use crate::data::battery::BatteryStatus;
 use crate::data::{MaybeData, StatusbarChangeCause, StatusbarData};
 use crate::io::StatusbarIOContext;
-use crate::time::{wait_till_next_minute, wait_till_time_change};
+use crate::time::{wait_till_next_minute, wait_till_time_change, ClockChangedCallback};
 
 // TODO: add a place to put realtime clock change detection.
 
@@ -135,11 +135,24 @@ where
     }
 }
 
+struct TreatPossibleChangesConservatively<'a> {
+    changeQ: &'a Sender<StatusbarChangeCause>,
+}
+
+impl ClockChangedCallback for TreatPossibleChangesConservatively<'_> {
+    async fn clock_change_maybe_lost(&self) -> Result<(), Box<dyn Error>> {
+        self.changeQ.send(StatusbarChangeCause::ClockAdjust).await?;
+        Ok(())
+    }
+}
+
 async fn fire_on_clock_change(changeQ: Sender<StatusbarChangeCause>) -> Result<(), Box<dyn Error>> {
     // TODO this should return Result<!, ...>
 
+    let cb = TreatPossibleChangesConservatively { changeQ: &changeQ };
+
     loop {
-        wait_till_time_change().await?;
+        wait_till_time_change(&cb).await?;
         changeQ.send(StatusbarChangeCause::ClockAdjust).await?;
     }
 }

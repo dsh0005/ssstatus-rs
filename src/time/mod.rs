@@ -99,13 +99,19 @@ use std::panic;
 use timerfd::{ClockId, SetTimeFlags, TimerFd, TimerState};
 use tokio::io::unix::AsyncFd;
 
+pub trait ClockChangedCallback {
+    async fn clock_change_maybe_lost(&self) -> Result<(), Box<dyn Error>>;
+}
+
 fn get_abs_utc_time_in_future(time: TimeDelta) -> Result<std::time::Duration, Box<dyn Error>> {
     Ok((Utc::now() + time)
         .signed_duration_since(DateTime::<Utc>::UNIX_EPOCH)
         .to_std()?)
 }
 
-pub async fn wait_till_time_change() -> Result<(), Box<dyn Error>> {
+pub async fn wait_till_time_change(
+    callback: &impl ClockChangedCallback,
+) -> Result<(), Box<dyn Error>> {
     // The timerfd crate makes the TCOS flag imply the Abstime flag.
     let listen_flags = SetTimeFlags::TimerCancelOnSet;
 
@@ -119,6 +125,10 @@ pub async fn wait_till_time_change() -> Result<(), Box<dyn Error>> {
     tfd.set_state(wait_far_into_future, listen_flags.clone());
     let mut tok_afd = AsyncFd::new(tfd)?;
 
+    // We just set the timer, so we'll catch changes from now on,
+    // but we might have missed one earlier.
+    callback.clock_change_maybe_lost().await?;
+
     loop {
         match tok_afd.readable_mut().await {
             Ok(mut guard) => {
@@ -128,7 +138,7 @@ pub async fn wait_till_time_change() -> Result<(), Box<dyn Error>> {
                         Ok(0) => io::Result::Err(std::io::ErrorKind::WouldBlock.into()),
                         Ok(_) => {
                             // The timer expired, we need to set it farther in the future.
-                            // TODO: set timer farther in the future
+                            // We'll do so outside of this try_io.
                             Ok(false)
                         }
                         Err(cause) => {
@@ -160,6 +170,11 @@ pub async fn wait_till_time_change() -> Result<(), Box<dyn Error>> {
                             TimerState::Oneshot(get_abs_utc_time_in_future(TimeDelta::weeks(1))?),
                             listen_flags.clone(),
                         );
+
+                        // Again, since we've now set the timer, we'll catch all the
+                        // changes, but we might have missed some in that short window.
+                        // Signal as such.
+                        callback.clock_change_maybe_lost().await?;
                         // Circle back around.
                     }
                     Ok(Err(e)) => {
