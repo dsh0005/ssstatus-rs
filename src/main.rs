@@ -188,9 +188,8 @@ where
             output.flush().await?;
         }
 
-        match changeQ.recv().await {
-            None => return Ok(()),
-            Some(_) => {}
+        if let None = changeQ.recv().await {
+            return Ok(());
         }
     }
     // TODO: print out status

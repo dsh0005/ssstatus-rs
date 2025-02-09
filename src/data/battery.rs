@@ -31,8 +31,6 @@ impl fmt::Display for BatteryStatus {
 
 impl From<f64> for BatteryStatus {
     fn from(percentage: f64) -> Self {
-        BatteryStatus {
-            percentage: percentage,
-        }
+        BatteryStatus { percentage }
     }
 }
