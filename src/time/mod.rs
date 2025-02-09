@@ -30,7 +30,7 @@ impl fmt::Display for DateTimeData<Tz> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match &self.0 {
             Ok(opt) => match opt {
-                Some(date_time) => write!(f, "{}", date_time),
+                Some(date_time) => write!(f, "{}", date_time.format("%Y-%m-%d %H:%M")),
                 None => write!(f, "none"),
             },
             Err(e) => write!(f, "{}", e),

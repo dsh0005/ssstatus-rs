@@ -25,7 +25,7 @@ pub struct BatteryStatus {
 
 impl fmt::Display for BatteryStatus {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}%", self.percentage)
+        write!(f, "{:3.0}%", self.percentage)
     }
 }
 
