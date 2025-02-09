@@ -17,9 +17,7 @@
  * If not, see <https://www.gnu.org/licenses/>.
  */
 
-use std::sync::Arc;
 use tokio::io::AsyncWrite;
-use tokio::sync::Mutex;
 
 pub struct StatusbarIOContext<SBO: AsyncWrite + Unpin, DO: AsyncWrite + Unpin> {
     pub statusbarOutput: SBO,

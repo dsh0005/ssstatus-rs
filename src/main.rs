@@ -263,7 +263,7 @@ async fn task_setup() -> Result<(), Box<dyn Error>> {
         ioCtx.clone(),
     ));
 
-    let (tx, mut rx) = channel(32);
+    let (tx, rx) = channel(32);
 
     let _upow_connect = local_tasks.spawn_local(listen_to_upower(
         sys_conn.clone(),

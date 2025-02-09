@@ -93,7 +93,6 @@ where
 
 use chrono::Utc;
 use libc::ECANCELED;
-use std::any::Any;
 use std::io;
 use std::panic;
 use timerfd::{ClockId, SetTimeFlags, TimerFd, TimerState};
@@ -133,7 +132,7 @@ pub async fn wait_till_time_change(
         match tok_afd.readable_mut().await {
             Ok(mut guard) => {
                 let read_res = guard.try_io(|tim: &mut AsyncFd<TimerFd>| {
-                    let mut t = &tim.get_mut();
+                    let t = &tim.get_mut();
                     match panic::catch_unwind(|| t.read()) {
                         Ok(0) => io::Result::Err(std::io::ErrorKind::WouldBlock.into()),
                         Ok(_) => {
