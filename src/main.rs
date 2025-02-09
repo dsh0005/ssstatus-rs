@@ -27,7 +27,7 @@ use std::time::{Duration, Instant};
 use tokio::io::{self as tokio_io, AsyncWrite, AsyncWriteExt};
 use tokio::runtime::Builder;
 use tokio::sync::mpsc::{channel, Receiver, Sender};
-use tokio::sync::Mutex as tokio_Mutex;
+use tokio::sync::Mutex;
 
 mod data;
 mod io;
@@ -106,7 +106,7 @@ async fn listen_for_tzchange(
 
 async fn fire_on_next_minute<SBO, DO>(
     change_q: Sender<StatusbarChangeCause>,
-    io_ctx: Arc<tokio_Mutex<StatusbarIOContext<SBO, DO>>>,
+    io_ctx: Arc<Mutex<StatusbarIOContext<SBO, DO>>>,
 ) -> Result<(), Box<dyn Error>>
 where
     SBO: AsyncWrite + Unpin,
@@ -155,7 +155,7 @@ async fn fire_on_clock_change(
 
 async fn update_statusbar<SBO, DO>(
     mut change_q: Receiver<StatusbarChangeCause>,
-    io_ctx: Arc<tokio_Mutex<StatusbarIOContext<SBO, DO>>>,
+    io_ctx: Arc<Mutex<StatusbarIOContext<SBO, DO>>>,
 ) -> Result<(), Box<dyn Error>>
 where
     SBO: AsyncWrite + Unpin,
@@ -195,7 +195,7 @@ where
 
 async fn setup_system_connection<SBO, DO>(
     sys_conn: Arc<LocalConnection>,
-    io_ctx: Arc<tokio_Mutex<StatusbarIOContext<SBO, DO>>>,
+    io_ctx: Arc<Mutex<StatusbarIOContext<SBO, DO>>>,
 ) -> Result<(), Box<dyn Error>>
 where
     SBO: AsyncWrite + Unpin,
@@ -233,7 +233,7 @@ where
 async fn task_setup() -> Result<(), Box<dyn Error>> {
     let local_tasks = tokio::task::LocalSet::new();
 
-    let io_ctx = Arc::new(tokio_Mutex::new(StatusbarIOContext::from((
+    let io_ctx = Arc::new(Mutex::new(StatusbarIOContext::from((
         tokio_io::stdout(),
         tokio_io::stderr(),
     ))));
