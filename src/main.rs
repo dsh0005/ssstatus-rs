@@ -18,8 +18,13 @@
  */
 
 use chrono_tz::Tz;
-use dbus::nonblock::stdintf::org_freedesktop_dbus::Properties;
-use dbus::nonblock::{LocalConnection, Proxy};
+use dbus::arg::RefArg;
+use dbus::message::{Message, SignalArgs};
+use dbus::nonblock::stdintf::org_freedesktop_dbus::{
+    Properties, PropertiesPropertiesChanged as PropChange,
+};
+use dbus::nonblock::{LocalConnection, MsgMatch, Proxy};
+use dbus::strings::{Interface, Member};
 use dbus_tokio::connection;
 use std::error::Error;
 use std::sync::Arc;
@@ -28,6 +33,7 @@ use tokio::io::{self as tokio_io, AsyncWrite, AsyncWriteExt};
 use tokio::runtime::Builder;
 use tokio::sync::mpsc::{channel, Receiver, Sender};
 use tokio::sync::Mutex;
+use tokio::task::spawn_local;
 
 mod data;
 mod io;
@@ -39,21 +45,71 @@ use crate::data::{MaybeData, StatusbarData};
 use crate::io::StatusbarIOContext;
 use crate::time::{wait_till_next_minute, wait_till_time_change, ClockChangedCallback};
 
+async fn wrangle_lifetimes_update(
+    change_q: Sender<StatusbarChangeCause>,
+    data: StatusbarChangeCause,
+) -> Result<(), Box<dyn Error>> {
+    Ok(change_q.send(data).await?)
+}
+
 async fn listen_to_upower(
     sys_conn: Arc<LocalConnection>,
     change_q: Sender<StatusbarChangeCause>,
-) -> Result<(), Box<dyn Error>> {
+) -> Result<MsgMatch, Box<dyn Error>> {
+    let rule = PropChange::match_rule(
+        None,
+        Some(&"/org/freedesktop/UPower/devices/DisplayDevice".into()),
+    )
+    .static_clone();
+
     let upower_proxy = Proxy::new(
         "org.freedesktop.UPower",
-        "/org/freedesktop/UPower/devices/DisplayDevice",
+        rule.path.clone().unwrap(),
         Duration::from_secs(5),
-        sys_conn,
+        sys_conn.clone(),
     );
 
+    let iface = match Interface::new("org.freedesktop.UPower.Device") {
+        Ok(interface) => interface,
+        Err(_description) => {
+            unreachable!()
+        }
+    };
+
+    let percent_member = match Member::new("Percentage") {
+        Ok(member) => member,
+        Err(_description) => {
+            unreachable!()
+        }
+    };
+
+    // TODO: go introspect and make sure that Percentage is marked emits-change.
+
+    let cloned_change_q = change_q.clone();
+
+    let mtch = sys_conn.add_match(rule).await?.cb(move |_mesg: Message, change: PropChange| {
+        if change.interface_name == "org.freedesktop.UPower.Device" {
+            let maybe_new_pct = {
+                if let Some(new_value) = change.changed_properties.get("Percentage") {
+                    Some(new_value.as_f64().expect("Percentage is documented as \"double\""))
+                } else if change.invalidated_properties.contains(&String::from("Percentage")) {
+                    panic!("help I can't reasonably do async in a sync callback, it'd reenter dbus!");
+                } else {
+                    None
+                }
+            };
+
+            if let Some(new_pct) = maybe_new_pct {
+                let got_bat_when = Instant::now();
+                spawn_local(wrangle_lifetimes_update(cloned_change_q.clone(), StatusbarChangeCause::BatteryChange(MaybeData(Ok(Some((got_bat_when, BatteryStatus::from(new_pct))))))));
+            }
+        }
+
+        true
+    });
+
     // Get the starting percentage.
-    let start_pct = upower_proxy
-        .get::<f64>("org.freedesktop.UPower.Device", "Percentage")
-        .await?;
+    let start_pct = upower_proxy.get::<f64>(&iface, &percent_member).await?;
     let got_bat_when = Instant::now();
 
     change_q
@@ -63,11 +119,7 @@ async fn listen_to_upower(
         ))))))
         .await?;
 
-    // TODO: add match
-    // TODO: update data
-    // TODO: schedule refresh
-
-    Ok(())
+    Ok(mtch)
 }
 
 async fn listen_for_tzchange(
@@ -183,43 +235,6 @@ where
     }
 }
 
-async fn setup_system_connection<SBO, DO>(
-    sys_conn: Arc<LocalConnection>,
-    io_ctx: Arc<Mutex<StatusbarIOContext<SBO, DO>>>,
-) -> Result<(), Box<dyn Error>>
-where
-    SBO: AsyncWrite + Unpin,
-    DO: AsyncWrite + Unpin,
-{
-    // Get a proxy to the bus.
-    let bus_proxy = Proxy::new(
-        "org.freedesktop.DBus",
-        "/",
-        Duration::from_secs(5),
-        sys_conn,
-    );
-
-    // Get what activatable names there are.
-    let (sys_act_names,): (Vec<String>,) = bus_proxy
-        .method_call("org.freedesktop.DBus", "ListActivatableNames", ())
-        .await?;
-
-    {
-        let output = &mut io_ctx.lock().await.debug_output;
-
-        // Print all the names.
-        for name in sys_act_names {
-            output.write_all(format!("{}\n", name).as_bytes()).await?;
-        }
-
-        output.flush().await?;
-    }
-
-    // TODO: make connections to UPower & al. and add matches to subscribe to signals.
-
-    Ok(())
-}
-
 async fn task_setup() -> Result<(), Box<dyn Error>> {
     let local_tasks = tokio::task::LocalSet::new();
 
@@ -239,23 +254,23 @@ async fn task_setup() -> Result<(), Box<dyn Error>> {
         panic!("Lost connection to system D-Bus: {}", err);
     });
 
-    // Set up all the listening stuff for the system connection.
-    let _sys_connect =
-        local_tasks.spawn_local(setup_system_connection(sys_conn.clone(), io_ctx.clone()));
-
     // Make the channel, with a totally arbitrary depth.
     let (tx, rx) = channel(32);
 
-    let _upow_connect = local_tasks.spawn_local(listen_to_upower(sys_conn.clone(), tx.clone()));
-    let _tz_connect = local_tasks.spawn_local(listen_for_tzchange(sys_conn, tx.clone()));
+    let upow_connect = local_tasks.spawn_local(listen_to_upower(sys_conn.clone(), tx.clone()));
+    let _tz_connect = local_tasks.spawn_local(listen_for_tzchange(sys_conn.clone(), tx.clone()));
 
     let _tick_minute = local_tasks.spawn_local(fire_on_next_minute(tx.clone(), io_ctx.clone()));
     let _listen_adj = local_tasks.spawn_local(fire_on_clock_change(tx));
 
     let _update_stat = local_tasks.spawn_local(update_statusbar(rx, io_ctx));
 
+    let upow_unlisten_match = local_tasks.run_until(upow_connect).await??;
+
     // Wait for our tasks to finish.
     local_tasks.await;
+
+    sys_conn.remove_match(upow_unlisten_match.token()).await?;
 
     Ok(())
 }
