@@ -125,17 +125,59 @@ async fn listen_to_upower(
 async fn listen_for_tzchange(
     sys_conn: Arc<LocalConnection>,
     change_q: Sender<StatusbarChangeCause>,
-) -> Result<(), Box<dyn Error>> {
+) -> Result<MsgMatch, Box<dyn Error>> {
+    let rule =
+        PropChange::match_rule(None, Some(&"/org/freedesktop/timedate1".into())).static_clone();
+
     let timedate_proxy = Proxy::new(
         "org.freedesktop.timedate1",
-        "/org/freedesktop/timedate1",
+        rule.path.clone().unwrap(),
         Duration::from_secs(5),
-        sys_conn,
+        sys_conn.clone(),
     );
+
+    let iface = match Interface::new("org.freedesktop.timedate1") {
+        Ok(interface) => interface,
+        Err(_description) => {
+            unreachable!()
+        }
+    };
+
+    let tz_name_member = match Member::new("Timezone") {
+        Ok(member) => member,
+        Err(_description) => {
+            unreachable!()
+        }
+    };
+
+    // TODO: go introspect and make sure that Timezone is marked emits-change.
+
+    let cloned_change_q = change_q.clone();
+
+    let mtch = sys_conn.add_match(rule).await?.cb(move |_mesg: Message, change: PropChange| {
+        if change.interface_name == "org.freedesktop.timedate1" {
+            let maybe_new_tz = {
+                if let Some(new_tz_str) = change.changed_properties.get("Timezone") {
+                    Some(new_tz_str.as_str().expect("Timezone is documented as a string").parse::<Tz>().expect("expected to recognize timezone name"))
+                } else if change.invalidated_properties.contains(&String::from("Timezone")) {
+                    panic!("help I can't reasonably do async in a sync callback, it'd reenter dbus!");
+                } else {
+                    None
+                }
+            };
+
+            if let Some(new_tz) = maybe_new_tz {
+                let got_tz_when = Instant::now();
+                spawn_local(wrangle_lifetimes_update(cloned_change_q.clone(), StatusbarChangeCause::TzChange(MaybeData(Ok(Some((got_tz_when, new_tz)))))));
+            }
+        }
+
+        true
+    });
 
     // Get the starting TZ.
     let start_tz_str = timedate_proxy
-        .get::<String>("org.freedesktop.timedate1", "Timezone")
+        .get::<String>(&iface, &tz_name_member)
         .await?;
     let got_tz_when = Instant::now();
     let start_tz = start_tz_str.parse::<Tz>()?;
@@ -147,11 +189,7 @@ async fn listen_for_tzchange(
         ))))))
         .await?;
 
-    // TODO: add match for TZ change
-    // TODO: update data
-    // TODO: schedule refresh
-
-    Ok(())
+    Ok(mtch)
 }
 
 async fn fire_on_next_minute<SBO, DO>(
@@ -258,7 +296,7 @@ async fn task_setup() -> Result<(), Box<dyn Error>> {
     let (tx, rx) = channel(32);
 
     let upow_connect = local_tasks.spawn_local(listen_to_upower(sys_conn.clone(), tx.clone()));
-    let _tz_connect = local_tasks.spawn_local(listen_for_tzchange(sys_conn.clone(), tx.clone()));
+    let tz_connect = local_tasks.spawn_local(listen_for_tzchange(sys_conn.clone(), tx.clone()));
 
     let _tick_minute = local_tasks.spawn_local(fire_on_next_minute(tx.clone(), io_ctx.clone()));
     let _listen_adj = local_tasks.spawn_local(fire_on_clock_change(tx));
@@ -266,11 +304,13 @@ async fn task_setup() -> Result<(), Box<dyn Error>> {
     let _update_stat = local_tasks.spawn_local(update_statusbar(rx, io_ctx));
 
     let upow_unlisten_match = local_tasks.run_until(upow_connect).await??;
+    let tz_unlisten_match = local_tasks.run_until(tz_connect).await??;
 
     // Wait for our tasks to finish.
     local_tasks.await;
 
     sys_conn.remove_match(upow_unlisten_match.token()).await?;
+    sys_conn.remove_match(tz_unlisten_match.token()).await?;
 
     Ok(())
 }
