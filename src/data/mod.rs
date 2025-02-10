@@ -119,5 +119,3 @@ pub enum StatusbarChangeCause {
     // The battery status changed.
     BatteryChange(MaybeData<BatteryStatus>),
 }
-
-// TODO: define an RCU structure?
