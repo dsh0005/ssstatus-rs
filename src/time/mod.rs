@@ -60,7 +60,7 @@ where
     let sleep_duration = next_minute - start;
     let std_sleep_duration = sleep_duration.to_std()?;
 
-    {
+    if cfg!(feature = "debug_sleep") {
         let output = &mut io_ctx.lock().await.debug_output;
 
         output
@@ -79,7 +79,7 @@ where
 
     let finish = Local::now();
 
-    {
+    if cfg!(feature = "debug_sleep") {
         let output = &mut io_ctx.lock().await.debug_output;
 
         output
