@@ -26,6 +26,7 @@ use dbus::nonblock::stdintf::org_freedesktop_dbus::{
 use dbus::nonblock::{LocalConnection, MsgMatch, Proxy};
 use dbus::strings::{Interface, Member};
 use dbus_tokio::connection;
+use std::convert::Infallible;
 use std::error::Error;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -195,7 +196,7 @@ async fn listen_for_tzchange(
 async fn fire_on_next_minute<SBO, DO>(
     change_q: Sender<StatusbarChangeCause>,
     io_ctx: Arc<Mutex<StatusbarIOContext<SBO, DO>>>,
-) -> Result<(), Box<dyn Error>>
+) -> Result<Infallible, Box<dyn Error>>
 where
     SBO: AsyncWrite + Unpin,
     DO: AsyncWrite + Unpin,
@@ -223,7 +224,7 @@ impl ClockChangedCallback for TreatPossibleChangesConservatively<'_> {
 
 async fn fire_on_clock_change(
     change_q: Sender<StatusbarChangeCause>,
-) -> Result<(), Box<dyn Error>> {
+) -> Result<Infallible, Box<dyn Error>> {
     // TODO this should return Result<!, ...>
 
     let cb = TreatPossibleChangesConservatively {
@@ -244,8 +245,6 @@ where
     SBO: AsyncWrite + Unpin,
     DO: AsyncWrite + Unpin,
 {
-    // TODO this should return Result<!, ...>
-
     let mut data = StatusbarData::new();
 
     loop {
