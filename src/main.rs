@@ -319,6 +319,7 @@ pub fn main() -> Result<(), Box<dyn Error>> {
     Builder::new_current_thread()
         .enable_io()
         .enable_time()
+        .thread_keep_alive(Duration::from_secs(70))
         .build()
         .unwrap()
         .block_on(task_setup())
