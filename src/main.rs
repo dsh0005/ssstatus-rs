@@ -73,14 +73,14 @@ async fn listen_to_upower(
     let iface = match Interface::new("org.freedesktop.UPower.Device") {
         Ok(interface) => interface,
         Err(_description) => {
-            unreachable!()
+            unreachable!("This hardcoded name is the correct one so it must be okay.")
         }
     };
 
     let percent_member = match Member::new("Percentage") {
         Ok(member) => member,
         Err(_description) => {
-            unreachable!()
+            unreachable!("This hardcoded name is the correct one so it must be okay.")
         }
     };
 
@@ -140,14 +140,14 @@ async fn listen_for_tzchange(
     let iface = match Interface::new("org.freedesktop.timedate1") {
         Ok(interface) => interface,
         Err(_description) => {
-            unreachable!()
+            unreachable!("This hardcoded name is the correct one so it must be okay.")
         }
     };
 
     let tz_name_member = match Member::new("Timezone") {
         Ok(member) => member,
         Err(_description) => {
-            unreachable!()
+            unreachable!("This hardcoded name is the correct one so it must be okay.")
         }
     };
 
