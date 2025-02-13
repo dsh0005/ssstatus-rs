@@ -94,7 +94,7 @@ async fn listen_to_upower(
                 if let Some(new_value) = change.changed_properties.get("Percentage") {
                     Some(new_value.as_f64().expect("Percentage is documented as \"double\""))
                 } else if change.invalidated_properties.contains(&String::from("Percentage")) {
-                    panic!("help I can't reasonably do async in a sync callback, it'd reenter dbus!");
+                    unimplemented!("Firing off a message here would reenter dbus and I haven't thought that out yet.");
                 } else {
                     None
                 }
@@ -161,7 +161,7 @@ async fn listen_for_tzchange(
                 if let Some(new_tz_str) = change.changed_properties.get("Timezone") {
                     Some(new_tz_str.as_str().expect("Timezone is documented as a string").parse::<Tz>().expect("expected to recognize timezone name"))
                 } else if change.invalidated_properties.contains(&String::from("Timezone")) {
-                    panic!("help I can't reasonably do async in a sync callback, it'd reenter dbus!");
+                    unimplemented!("Firing off a message here would reenter dbus and I haven't thought that out yet.");
                 } else {
                     None
                 }
