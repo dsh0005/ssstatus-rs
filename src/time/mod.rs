@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 /* Silly Simple Status(bar) widget
- * Copyright (C) 2024 Douglas Storm Hill
+ * Copyright (C) 2024, 2025 Douglas Storm Hill
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
