@@ -51,6 +51,25 @@ a few of them:
 - We assume that all currently-used timezones have a UTC offset that is
   a multiple of 60 seconds.
 
+## Leftover bugs, unimplemented things, and future directions
+- I'm not confident of the behavior for the case where the `REALTIME`
+  clock gets adjusted backwards by a significant amount. It should
+  trigger a refresh from `wait_till_time_change`, but I'm not
+  completely sure that `wait_till_next_minute` will still fire at the
+  next refresh time.
+- If UPower ever invalidates the battery percentage, we don't handle
+  that case. We'll probably need to spawn a task to go fetch the data.
+  The same goes for the timezone.
+- The way `dbus` works clashes with how I want to do async. The
+  matchers are pretty gross, and should make that obvious.
+- Tokio wants to offload writes to stdout to a worker thread. It's fine
+  since I can set the keepalive to more than my expected update
+  interval, but it could probably be better.
+- The fact that `timerfd` panics on _all_ errors forces us to catch
+  them and inspect the message to look for `ECANCELED`. That forces us
+  to use unwinding panics, when I'd rather abort. Maybe I should just
+  implement it myself.
+
 ## License
 AGPLv3 (only), refer to `LICENSE.txt` for more info. I wrote the whole
 thing myself (so far).
