@@ -92,10 +92,11 @@ where
 }
 
 use chrono::Utc;
-use libc::ECANCELED;
+use nix::errno::Errno::{self, EAGAIN, ECANCELED};
+use nix::sys::time::TimeSpec;
+use nix::sys::timerfd::{ClockId, Expiration, TimerFd, TimerFlags, TimerSetTimeFlags};
 use std::io;
-use std::panic;
-use timerfd::{ClockId, SetTimeFlags, TimerFd, TimerState};
+use std::os::fd::{AsFd, BorrowedFd};
 use tokio::io::unix::AsyncFd;
 use tokio::io::Interest;
 
@@ -112,46 +113,49 @@ fn get_abs_utc_time_in_future(time: TimeDelta) -> Result<std::time::Duration, Bo
 pub async fn wait_till_time_change(
     callback: &impl ClockChangedCallback,
 ) -> Result<(), Box<dyn Error>> {
-    // The timerfd crate makes the TCOS flag imply the Abstime flag.
-    let listen_flags = SetTimeFlags::TimerCancelOnSet;
+    let listen_flags =
+        TimerSetTimeFlags::TFD_TIMER_ABSTIME | TimerSetTimeFlags::TFD_TIMER_CANCEL_ON_SET;
 
     // We need to choose some time in the future to wait on, that's
     // just how timerfd TCOS works. So choose something silly
     // infrequent.
-    let wait_far_into_future =
-        TimerState::Oneshot(get_abs_utc_time_in_future(TimeDelta::weeks(1))?);
+    let wait_far_into_future = Expiration::OneShot(TimeSpec::from_duration(
+        get_abs_utc_time_in_future(TimeDelta::weeks(1))?,
+    ));
 
-    let mut tfd = TimerFd::new_custom(ClockId::Realtime, true, true)?;
-    tfd.set_state(wait_far_into_future, listen_flags.clone());
-    let mut tok_afd = AsyncFd::with_interest(tfd, Interest::READABLE | Interest::ERROR)?;
+    let tfd = TimerFd::new(
+        ClockId::CLOCK_REALTIME,
+        TimerFlags::TFD_NONBLOCK | TimerFlags::TFD_CLOEXEC,
+    )?;
+    tfd.set(wait_far_into_future, listen_flags.clone())?;
+
+    let borrow_tfd = tfd.as_fd();
+
+    let tok_afd = AsyncFd::with_interest(borrow_tfd, Interest::READABLE | Interest::ERROR)?;
 
     // We just set the timer, so we'll catch changes from now on,
     // but we might have missed one earlier.
     callback.clock_change_maybe_lost().await?;
 
     loop {
-        match tok_afd.readable_mut().await {
+        match tok_afd.readable().await {
             Ok(mut guard) => {
-                let read_res = guard.try_io(|tim: &mut AsyncFd<TimerFd>| {
-                    let t = &tim.get_mut();
-                    match panic::catch_unwind(|| t.read()) {
-                        Ok(0) => io::Result::Err(std::io::ErrorKind::WouldBlock.into()),
-                        Ok(_) => {
+                let read_res = guard.try_io(|_borrowed_timer: &AsyncFd<BorrowedFd>| {
+                    match &tfd.wait() {
+                        Ok(()) => {
                             // The timer expired, we need to set it farther in the future.
                             // We'll do so outside of this try_io.
                             Ok(false)
                         }
-                        Err(cause) => {
-                            if let Some(msg) = cause.downcast_ref::<&str>() {
-                                if *msg == format!("Unexpected read error: {}", ECANCELED) {
-                                    // The clock got changed.
-                                    return Ok(true);
-                                }
-                            }
-                            io::Result::Err(io::Error::other(
-                                "some panic from timerfd::TimerFd::read()",
-                            ))
+                        Err(EAGAIN) => {
+                            // It's tokio's job now.
+                            io::Result::Err(std::io::ErrorKind::WouldBlock.into())
                         }
+                        Err(ECANCELED) => {
+                            // Hey, the clock changed!
+                            Ok(true)
+                        }
+                        Err(eno) => Err((*eno).into()),
                     }
                 });
 
@@ -166,10 +170,12 @@ pub async fn wait_till_time_change(
                     Ok(Ok(false)) => {
                         // The timer expired, and _we_ need to set it farther out in the
                         // future.
-                        guard.get_inner_mut().set_state(
-                            TimerState::Oneshot(get_abs_utc_time_in_future(TimeDelta::weeks(1))?),
+                        let _ = &tfd.set(
+                            Expiration::OneShot(TimeSpec::from_duration(
+                                get_abs_utc_time_in_future(TimeDelta::weeks(1))?,
+                            )),
                             listen_flags.clone(),
-                        );
+                        )?;
 
                         // Again, since we've now set the timer, we'll catch all the
                         // changes, but we might have missed some in that short window.
@@ -182,19 +188,19 @@ pub async fn wait_till_time_change(
                     }
                 }
             }
-            Err(e) => match e.raw_os_error() {
-                None => {
+            Err(e) => match Errno::try_from(e) {
+                Err(unconverted) => {
                     // TODO: log? panic?
-                    return Err(Box::new(e));
+                    return Err(Box::new(unconverted));
                 }
-                Some(ose) => match ose {
+                Ok(eno) => match eno {
                     ECANCELED => {
                         // The clock got changed.
                         return Ok(());
                     }
-                    _ => {
+                    eno => {
                         // TODO: log? panic?
-                        return Err(Box::new(e));
+                        return Err(eno.into());
                     }
                 },
             },

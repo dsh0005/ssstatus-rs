@@ -65,10 +65,6 @@ a few of them:
 - Tokio wants to offload writes to stdout to a worker thread. It's fine
   since I can set the keepalive to more than my expected update
   interval, but it could probably be better.
-- The fact that `timerfd` panics on _all_ errors forces us to catch
-  them and inspect the message to look for `ECANCELED`. That forces us
-  to use unwinding panics, when I'd rather abort. Maybe I should just
-  implement it myself.
 
 ## License
 AGPLv3 (only), refer to `LICENSE.txt` for more info. I wrote the whole
