@@ -97,6 +97,7 @@ use std::io;
 use std::panic;
 use timerfd::{ClockId, SetTimeFlags, TimerFd, TimerState};
 use tokio::io::unix::AsyncFd;
+use tokio::io::Interest;
 
 pub trait ClockChangedCallback {
     async fn clock_change_maybe_lost(&self) -> Result<(), Box<dyn Error>>;
@@ -122,7 +123,7 @@ pub async fn wait_till_time_change(
 
     let mut tfd = TimerFd::new_custom(ClockId::Realtime, true, true)?;
     tfd.set_state(wait_far_into_future, listen_flags.clone());
-    let mut tok_afd = AsyncFd::new(tfd)?;
+    let mut tok_afd = AsyncFd::with_interest(tfd, Interest::READABLE | Interest::ERROR)?;
 
     // We just set the timer, so we'll catch changes from now on,
     // but we might have missed one earlier.
