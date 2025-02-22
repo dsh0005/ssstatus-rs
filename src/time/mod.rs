@@ -97,8 +97,8 @@ use nix::sys::time::TimeSpec;
 use nix::sys::timerfd::{ClockId, Expiration, TimerFd, TimerFlags, TimerSetTimeFlags};
 use std::io;
 use std::os::fd::{AsFd, BorrowedFd};
-use tokio::io::unix::AsyncFd;
 use tokio::io::Interest;
+use tokio::io::unix::AsyncFd;
 
 pub trait ClockChangedCallback {
     async fn clock_change_maybe_lost(&self) -> Result<(), Box<dyn Error>>;
