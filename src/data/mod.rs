@@ -49,6 +49,15 @@ pub struct StatusbarData {
 }
 
 impl StatusbarData {
+    pub fn battery(&self) -> MaybeData<BatteryStatus> {
+        match &self.battery.0 {
+            Ok(Some((timestamp, level))) => {
+                MaybeData::<BatteryStatus>(Ok(Some((*timestamp, *level))))
+            }
+            _ => MaybeData::<BatteryStatus>(Ok(None)),
+        }
+    }
+
     pub fn time(&self) -> DateTimeData<Tz> {
         match &self.timezone.0 {
             Ok(opt) => match opt {

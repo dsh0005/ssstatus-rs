@@ -19,6 +19,7 @@
 
 use std::fmt;
 
+#[derive(Clone, Copy)]
 pub struct BatteryStatus {
     pub percentage: f64,
 }

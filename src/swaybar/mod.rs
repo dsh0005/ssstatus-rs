@@ -26,6 +26,7 @@ use tokio::sync::mpsc::Receiver;
 use crate::data::StatusbarChangeCause::{self, BatteryChange, TzChange};
 use crate::data::StatusbarData;
 use crate::io::StatusbarIOContext;
+use crate::time::ShortenedDTD;
 
 async fn print_header<SBO, DO>(
     io_ctx: &Arc<Mutex<StatusbarIOContext<SBO, DO>>>,
@@ -68,8 +69,22 @@ where
     DO: AsyncWrite + Unpin,
 {
     let line = format!(
-        "\t[\n\t\t{{\n\t\t\t\"full_text\": \"{}\"\n\t\t}}\n\t],\n",
-        data
+        "  [\n\
+        \x20   {{\n\
+        \x20     \"full_text\": \"{}\",\n\
+        \x20     \"min_width\": \"{}\"\n\
+        \x20   }},\n\
+        \x20   {{\n\
+        \x20     \"full_text\": \"{}\",\n\
+        \x20     \"short_text\": \"{}\",\n\
+        \x20     \"min_width\": \"{}\"\n\
+        \x20   }}\n\
+        \x20 ],\n",
+        data.battery(),
+        "000%",
+        data.time(),
+        ShortenedDTD(data.time()),
+        "00:00"
     );
 
     let output = &mut io_ctx.lock().await.statusbar_output;

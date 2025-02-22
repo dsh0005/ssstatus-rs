@@ -38,6 +38,17 @@ impl fmt::Display for DateTimeData<Tz> {
     }
 }
 
+pub struct ShortenedDTD<Tz: TimeZone>(pub DateTimeData<Tz>);
+
+impl fmt::Display for ShortenedDTD<Tz> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match &self.0.0 {
+            Ok(Some(date_time)) => write!(f, "{}", date_time.format("%H:%M")),
+            _ => write!(f, "none"),
+        }
+    }
+}
+
 use crate::StatusbarIOContext;
 use chrono::{DurationRound, Local, TimeDelta};
 use std::sync::Arc;
