@@ -138,7 +138,7 @@ pub async fn wait_till_time_change(
         ClockId::CLOCK_REALTIME,
         TimerFlags::TFD_NONBLOCK | TimerFlags::TFD_CLOEXEC,
     )?;
-    tfd.set(wait_far_into_future, listen_flags.clone())?;
+    tfd.set(wait_far_into_future, listen_flags)?;
 
     let borrow_tfd = tfd.as_fd();
 
@@ -185,7 +185,7 @@ pub async fn wait_till_time_change(
                             Expiration::OneShot(TimeSpec::from_duration(
                                 get_abs_utc_time_in_future(TimeDelta::weeks(1))?,
                             )),
-                            listen_flags.clone(),
+                            listen_flags,
                         )?;
 
                         // Again, since we've now set the timer, we'll catch all the
