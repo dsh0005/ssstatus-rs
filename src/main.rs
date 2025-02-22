@@ -30,21 +30,22 @@ use std::convert::Infallible;
 use std::error::Error;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tokio::io::{self as tokio_io, AsyncWrite, AsyncWriteExt};
+use tokio::io::{self as tokio_io, AsyncWrite};
 use tokio::runtime::Builder;
-use tokio::sync::mpsc::{channel, Receiver, Sender};
 use tokio::sync::Mutex;
+use tokio::sync::mpsc::{Sender, channel};
 use tokio::task::spawn_local;
 
 mod data;
 mod io;
+mod swaybar;
 mod time;
 
 use crate::data::battery::BatteryStatus;
-use crate::data::StatusbarChangeCause::{self, BatteryChange, TzChange};
-use crate::data::{MaybeData, StatusbarData};
+use crate::data::{MaybeData, StatusbarChangeCause};
 use crate::io::StatusbarIOContext;
-use crate::time::{wait_till_next_minute, wait_till_time_change, ClockChangedCallback};
+use crate::swaybar::run_statusbar_updater;
+use crate::time::{ClockChangedCallback, wait_till_next_minute, wait_till_time_change};
 
 async fn wrangle_lifetimes_update(
     change_q: Sender<StatusbarChangeCause>,
@@ -237,41 +238,6 @@ async fn fire_on_clock_change(
     }
 }
 
-async fn update_statusbar<SBO, DO>(
-    mut change_q: Receiver<StatusbarChangeCause>,
-    io_ctx: Arc<Mutex<StatusbarIOContext<SBO, DO>>>,
-) -> Result<(), Box<dyn Error>>
-where
-    SBO: AsyncWrite + Unpin,
-    DO: AsyncWrite + Unpin,
-{
-    let mut data = StatusbarData::new();
-
-    loop {
-        let new_stat = format!("{}\n", data);
-
-        {
-            let output = &mut io_ctx.lock().await.statusbar_output;
-
-            output.write_all(new_stat.as_bytes()).await?;
-            output.flush().await?;
-        }
-
-        match change_q.recv().await {
-            Some(TzChange(tz_change)) => {
-                data.update_timezone_maybedata(tz_change);
-            }
-            Some(BatteryChange(bat_change)) => {
-                data.update_battery_maybedata(bat_change);
-            }
-            Some(_) => {}
-            None => {
-                return Ok(());
-            }
-        }
-    }
-}
-
 async fn task_setup() -> Result<(), Box<dyn Error>> {
     let local_tasks = tokio::task::LocalSet::new();
 
@@ -300,7 +266,7 @@ async fn task_setup() -> Result<(), Box<dyn Error>> {
     let _tick_minute = local_tasks.spawn_local(fire_on_next_minute(tx.clone(), io_ctx.clone()));
     let _listen_adj = local_tasks.spawn_local(fire_on_clock_change(tx));
 
-    let _update_stat = local_tasks.spawn_local(update_statusbar(rx, io_ctx));
+    let _update_stat = local_tasks.spawn_local(run_statusbar_updater(rx, io_ctx));
 
     let upow_unlisten_match = local_tasks.run_until(upow_connect).await??;
     let tz_unlisten_match = local_tasks.run_until(tz_connect).await??;
