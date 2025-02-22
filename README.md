@@ -65,6 +65,8 @@ a few of them:
 - Tokio wants to offload writes to stdout to a worker thread. It's fine
   since I can set the keepalive to more than my expected update
   interval, but it could probably be better.
+- Looks like we're affected by swaywm/sway#4496 for some reason. Maybe
+  we should change our output to `swaybar-protocol(7)`.
 
 ## License
 AGPLv3 (only), refer to `LICENSE.txt` for more info. I wrote the whole
