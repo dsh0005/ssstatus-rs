@@ -27,7 +27,60 @@ use crate::data::StatusbarChangeCause::{self, BatteryChange, TzChange};
 use crate::data::StatusbarData;
 use crate::io::StatusbarIOContext;
 
-pub async fn run_statusbar_updater<SBO, DO>(
+async fn print_header<SBO, DO>(
+    io_ctx: &Arc<Mutex<StatusbarIOContext<SBO, DO>>>,
+) -> Result<(), Box<dyn Error>>
+where
+    SBO: AsyncWrite + Unpin,
+    DO: AsyncWrite + Unpin,
+{
+    let header = String::from("{ \"version\": 1 }\n");
+
+    let output = &mut io_ctx.lock().await.statusbar_output;
+
+    output.write_all(header.as_bytes()).await?;
+
+    Ok(())
+}
+
+async fn print_body_begin<SBO, DO>(
+    io_ctx: &Arc<Mutex<StatusbarIOContext<SBO, DO>>>,
+) -> Result<(), Box<dyn Error>>
+where
+    SBO: AsyncWrite + Unpin,
+    DO: AsyncWrite + Unpin,
+{
+    let body_begin = String::from("[\n");
+
+    let output = &mut io_ctx.lock().await.statusbar_output;
+
+    output.write_all(body_begin.as_bytes()).await?;
+
+    Ok(())
+}
+
+async fn print_status_line<SBO, DO>(
+    data: &StatusbarData,
+    io_ctx: &Arc<Mutex<StatusbarIOContext<SBO, DO>>>,
+) -> Result<(), Box<dyn Error>>
+where
+    SBO: AsyncWrite + Unpin,
+    DO: AsyncWrite + Unpin,
+{
+    let line = format!(
+        "\t[\n\t\t{{\n\t\t\t\"full_text\": \"{}\"\n\t\t}}\n\t],\n",
+        data
+    );
+
+    let output = &mut io_ctx.lock().await.statusbar_output;
+
+    output.write_all(line.as_bytes()).await?;
+    output.flush().await?;
+
+    Ok(())
+}
+
+async fn print_infinite_body<SBO, DO>(
     mut change_q: Receiver<StatusbarChangeCause>,
     io_ctx: Arc<Mutex<StatusbarIOContext<SBO, DO>>>,
 ) -> Result<(), Box<dyn Error>>
@@ -35,17 +88,12 @@ where
     SBO: AsyncWrite + Unpin,
     DO: AsyncWrite + Unpin,
 {
+    print_body_begin(&io_ctx).await?;
+
     let mut data = StatusbarData::new();
 
     loop {
-        let new_stat = format!("{}\n", data);
-
-        {
-            let output = &mut io_ctx.lock().await.statusbar_output;
-
-            output.write_all(new_stat.as_bytes()).await?;
-            output.flush().await?;
-        }
+        print_status_line(&data, &io_ctx).await?;
 
         match change_q.recv().await {
             Some(TzChange(tz_change)) => {
@@ -60,4 +108,19 @@ where
             }
         }
     }
+}
+
+pub async fn run_statusbar_updater<SBO, DO>(
+    change_q: Receiver<StatusbarChangeCause>,
+    io_ctx: Arc<Mutex<StatusbarIOContext<SBO, DO>>>,
+) -> Result<(), Box<dyn Error>>
+where
+    SBO: AsyncWrite + Unpin,
+    DO: AsyncWrite + Unpin,
+{
+    print_header(&io_ctx).await?;
+
+    print_infinite_body(change_q, io_ctx).await?;
+
+    Ok(())
 }
