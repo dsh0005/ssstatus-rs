@@ -106,20 +106,30 @@ where
     print_body_begin(&io_ctx).await?;
 
     let mut data = StatusbarData::new();
+    let mut buf = Vec::with_capacity(4);
 
     loop {
         print_status_line(&data, &io_ctx).await?;
 
-        match change_q.recv().await {
-            Some(TzChange(tz_change)) => {
-                data.update_timezone_maybedata(tz_change);
-            }
-            Some(BatteryChange(bat_change)) => {
-                data.update_battery_maybedata(bat_change);
-            }
-            Some(_) => {}
-            None => {
+        match change_q.recv_many(&mut buf, 128).await {
+            0 => {
+                // No more, Senders must be shut down. I guess it's time
+                // to close up.
                 return Ok(());
+            }
+            _ => {
+                // Process all our messages before rerendering.
+                for msg in buf.drain(..) {
+                    match msg {
+                        TzChange(tz_change) => {
+                            data.update_timezone_maybedata(tz_change);
+                        }
+                        BatteryChange(bat_change) => {
+                            data.update_battery_maybedata(bat_change);
+                        }
+                        _ => {}
+                    }
+                }
             }
         }
     }
