@@ -111,25 +111,33 @@ where
     loop {
         print_status_line(&data, &io_ctx).await?;
 
-        match change_q.recv_many(&mut buf, 128).await {
-            0 => {
-                // No more, Senders must be shut down. I guess it's time
-                // to close up.
-                return Ok(());
-            }
-            _ => {
-                // Process all our messages before rerendering.
-                for msg in buf.drain(..) {
-                    match msg {
-                        TzChange(tz_change) => {
-                            data.update_timezone_maybedata(tz_change);
+        loop {
+            match change_q.recv_many(&mut buf, 128).await {
+                0 => {
+                    // No more, Senders must be shut down. I guess it's time
+                    // to close up.
+                    return Ok(());
+                }
+                _ => {
+                    // Process a bunch of our messages before rerendering.
+                    for msg in buf.drain(..) {
+                        match msg {
+                            TzChange(tz_change) => {
+                                data.update_timezone_maybedata(tz_change);
+                            }
+                            BatteryChange(bat_change) => {
+                                data.update_battery_maybedata(bat_change);
+                            }
+                            _ => {}
                         }
-                        BatteryChange(bat_change) => {
-                            data.update_battery_maybedata(bat_change);
-                        }
-                        _ => {}
                     }
                 }
+            }
+
+            // See if there's more messages that we should process
+            // before printing out the new status line.
+            if change_q.is_empty() {
+                break;
             }
         }
     }
