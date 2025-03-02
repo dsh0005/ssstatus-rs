@@ -28,6 +28,10 @@ use crate::data::StatusbarData;
 use crate::io::StatusbarIOContext;
 use crate::time::ShortenedDTD;
 
+mod json;
+
+use json::JSONSafeString;
+
 async fn print_header<SBO, DO>(
     io_ctx: &Arc<Mutex<StatusbarIOContext<SBO, DO>>>,
 ) -> Result<(), Box<dyn Error>>
@@ -80,10 +84,10 @@ where
         \x20     \"min_width\": \"{}\"\n\
         \x20   }}\n\
         \x20 ],\n",
-        data.battery(),
+        JSONSafeString::from(data.battery().to_string()),
         "000%",
-        data.time(),
-        ShortenedDTD(data.time()),
+        JSONSafeString::from(data.time().to_string()),
+        JSONSafeString::from(ShortenedDTD(data.time()).to_string()),
         "00:00"
     );
 
