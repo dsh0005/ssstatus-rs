@@ -30,7 +30,7 @@ use crate::time::ShortenedDTD;
 
 mod json;
 
-use json::JSONSafeString;
+use json::EscapeJSONMinimal;
 
 async fn print_header<SBO, DO>(
     io_ctx: &Arc<Mutex<StatusbarIOContext<SBO, DO>>>,
@@ -72,24 +72,46 @@ where
     SBO: AsyncWrite + Unpin,
     DO: AsyncWrite + Unpin,
 {
-    let line = format!(
-        "  [\n\
-        \x20   {{\n\
-        \x20     \"full_text\": \"{}\",\n\
-        \x20     \"min_width\": \"{}\"\n\
-        \x20   }},\n\
-        \x20   {{\n\
-        \x20     \"full_text\": \"{}\",\n\
-        \x20     \"short_text\": \"{}\",\n\
-        \x20     \"min_width\": \"{}\"\n\
-        \x20   }}\n\
-        \x20 ],\n",
-        JSONSafeString::from(data.battery().to_string()),
-        "000%",
-        JSONSafeString::from(data.time().to_string()),
-        JSONSafeString::from(ShortenedDTD(data.time()).to_string()),
-        "00:00"
-    );
+    let line = "  [\n\
+        \x20   {\n\
+        \x20     \"full_text\": \""
+        .chars()
+        .chain(EscapeJSONMinimal::new_from_str(&data.battery().to_string()))
+        .chain(
+            "\",\n\
+        \x20     \"min_width\": \""
+                .chars(),
+        )
+        .chain(EscapeJSONMinimal::new_from_str("000%"))
+        .chain(
+            "\"\n\
+        \x20   },\n\
+        \x20   {\n\
+        \x20     \"full_text\": \""
+                .chars(),
+        )
+        .chain(EscapeJSONMinimal::new_from_str(&data.time().to_string()))
+        .chain(
+            "\",\n\
+        \x20     \"short_text\": \""
+                .chars(),
+        )
+        .chain(EscapeJSONMinimal::new_from_str(
+            &ShortenedDTD(data.time()).to_string(),
+        ))
+        .chain(
+            "\",\n\
+        \x20     \"min_width\": \""
+                .chars(),
+        )
+        .chain(EscapeJSONMinimal::new_from_str("00:00"))
+        .chain(
+            "\"\n\
+        \x20   }\n\
+        \x20 ],\n"
+                .chars(),
+        )
+        .collect::<String>();
 
     let output = &mut io_ctx.lock().await.statusbar_output;
 

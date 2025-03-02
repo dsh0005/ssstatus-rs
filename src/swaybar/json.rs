@@ -17,24 +17,7 @@
  * If not, see <https://www.gnu.org/licenses/>.
  */
 
-pub enum JSONSafeString<'a> {
-    AlreadySafe(&'a str),
-    MadeSafe(String),
-}
-
-use JSONSafeString::*;
-
-fn json_char_needs_minimal_string_escaping(c: char) -> bool {
-    match c {
-        '\x00'..='\x1f' | '"' | '\\' => true,
-        _ => false,
-    }
-}
-
-fn json_string_is_minimal_safe(input: &str) -> bool {
-    !input.chars().any(json_char_needs_minimal_string_escaping)
-}
-
+#[derive(Copy, Clone, Debug)]
 enum EscapeJSONState {
     NotEscaping(),
     InUnicodeEscape((u8, char)),
@@ -45,7 +28,8 @@ enum EscapeJSONState {
 
 use std::str::Chars;
 
-struct EscapeJSONMinimal<'a> {
+#[derive(Clone, Debug)]
+pub struct EscapeJSONMinimal<'a> {
     input: Chars<'a>,
     state: EscapeJSONState,
 }
@@ -202,40 +186,3 @@ impl<'a> Iterator for EscapeJSONMinimal<'a> {
 use std::iter::FusedIterator;
 
 impl<'a> FusedIterator for EscapeJSONMinimal<'a> {}
-
-impl<'a> From<&'a str> for JSONSafeString<'a> {
-    fn from(input: &'a str) -> Self {
-        if json_string_is_minimal_safe(input) {
-            return AlreadySafe(input);
-        }
-
-        MadeSafe(String::from_iter(EscapeJSONMinimal::new_from_str(input)))
-    }
-}
-
-impl<'a> From<&'a String> for JSONSafeString<'a> {
-    fn from(input: &'a String) -> Self {
-        if json_string_is_minimal_safe(input) {
-            return AlreadySafe(input);
-        }
-
-        MadeSafe(String::from_iter(EscapeJSONMinimal::new_from_str(input)))
-    }
-}
-
-impl From<String> for JSONSafeString<'_> {
-    fn from(input: String) -> Self {
-        MadeSafe(String::from_iter(EscapeJSONMinimal::new_from_str(&input)))
-    }
-}
-
-use std::fmt;
-
-impl fmt::Display for JSONSafeString<'_> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            AlreadySafe(s) => write!(f, "{}", s),
-            MadeSafe(s) => write!(f, "{}", s),
-        }
-    }
-}
