@@ -17,38 +17,133 @@
  * If not, see <https://www.gnu.org/licenses/>.
  */
 
+/**
+ * What to do next when evaluating an input char.
+ */
+#[derive(Copy, Clone, Debug)]
+pub enum EscapeJSONDecision {
+    /**
+     * Print the input char out directly.
+     */
+    PrintDirectly(),
+    /**
+     * Print out a unicode escape sequence. It might be a surrogate
+     * pair.
+     */
+    UnicodeEscape(),
+    /**
+     * Print out a single char escape sequence with a different char
+     * substituting for the input char, e.g. `n` for `\n`.
+     */
+    SingleCharEscape(),
+    /**
+     * Print out a single char escape sequence with the input char in
+     * it, e.g. `"` for `\"`.
+     */
+    SelfEscape(),
+}
+
+/**
+ * The states for JSON string escapes.
+ */
 #[derive(Copy, Clone, Debug)]
 enum EscapeJSONState {
+    /**
+     * We're not in an escape, we need to look at the next character
+     * before we know what to output next.
+     */
     NotEscaping(),
+    /**
+     * We're in an escape sequence where we're putting out a `\uXXXX`
+     * sequence, possibly as a surrogate pair. The u8 is how far we are
+     * into the escape, with the initial `\` being 0. The char is the
+     * input char.
+     */
     InUnicodeEscape((u8, char)),
+    /**
+     * We're in an escape sequence where we've output a `\`, and the
+     * next char is something besides the input char, e.g. `n` in `\n`.
+     * The char is the input char.
+     */
     InSingleCharEscape(char),
+    /**
+     * We've output a `\`, and the next char to output is the input
+     * char itself, e.g. `"` in `\"`. The char is the input char.
+     */
     HaveEscaped(char),
+    /**
+     * We've reached the end of the string.
+     */
     EndOfString(),
 }
+
+use EscapeJSONDecision::*;
+
+fn rfc_single_char_escape(c: char) -> Option<char> {
+    match c {
+        // These aren't really single char escapes by the terminology
+        // of EscapeJSONDecision, but we'll allow them.
+        '"' => Some('"'),
+        '\\' => Some('\\'),
+        '/' => Some('/'),
+
+        '\x08' => Some('b'), // backspace
+        '\x0c' => Some('f'), // form feed
+        '\n' => Some('n'),   // line feed
+        '\r' => Some('r'),   // carriage return
+        '\t' => Some('t'),   // tab
+
+        _ => None,
+    }
+}
+
+/**
+ * Perform minimal escaping, according to IETF RFC 8259. This escapes
+ * quotation mark, reverse solidus, and code points 0x00-0x1F. No other
+ * characters are requested to be escaped.
+ */
+pub fn minimal_escaping(c: &char) -> EscapeJSONDecision {
+    match c {
+        '"' | '\\' => SelfEscape(),
+        '\x00'..='\x1f' => UnicodeEscape(),
+        _ => PrintDirectly(),
+    }
+}
+
+pub type StringEscapePolicy = fn(&char) -> EscapeJSONDecision;
 
 use std::str::Chars;
 
 #[derive(Clone, Debug)]
-pub struct EscapeJSONMinimal<'a> {
+pub struct EscapeJSONString<'a> {
     input: Chars<'a>,
     state: EscapeJSONState,
+    policy: StringEscapePolicy,
 }
 
 use EscapeJSONState::*;
 
-impl<'a> EscapeJSONMinimal<'a> {
-    pub fn new_from_str(s: &'a str) -> Self {
-        EscapeJSONMinimal {
+impl<'a> EscapeJSONString<'a> {
+    pub fn new_from_str(s: &'a str, policy: StringEscapePolicy) -> Self {
+        EscapeJSONString {
             input: s.chars(),
             state: EscapeJSONState::NotEscaping(),
+            policy: policy,
         }
     }
 
     fn next_char(&mut self) -> Option<char> {
         match self.state {
             EndOfString() => None,
-            HaveEscaped(c) => Some(c),
-            InSingleCharEscape(_) => unimplemented!(),
+            HaveEscaped(c) => {
+                self.state = NotEscaping();
+                Some(c)
+            }
+            InSingleCharEscape(c) => {
+                let escaped = rfc_single_char_escape(c).expect("We should not be doing a single char escape for a char that does not have a known single char escape.");
+                self.state = NotEscaping();
+                Some(escaped)
+            }
             InUnicodeEscape((count, c @ '\u{0000}'..='\u{ffff}')) => match count {
                 0 => unreachable!("This is handled in the NotEscaping case."),
                 1 => {
@@ -136,21 +231,27 @@ impl<'a> EscapeJSONMinimal<'a> {
                     self.state = EndOfString();
                     None
                 }
-                Some(needs_simple_escape @ ('"' | '\\')) => {
-                    self.state = HaveEscaped(needs_simple_escape);
-                    Some('\\')
-                }
-                Some(needs_unicode_escape @ '\x00'..='\x1f') => {
-                    self.state = InUnicodeEscape((1, needs_unicode_escape));
-                    Some('\\')
-                }
-                Some(c) => Some(c),
+                Some(c) => match (self.policy)(&c) {
+                    PrintDirectly() => Some(c),
+                    UnicodeEscape() => {
+                        self.state = InUnicodeEscape((1, c));
+                        Some('\\')
+                    }
+                    SingleCharEscape() => {
+                        self.state = InSingleCharEscape(c);
+                        Some('\\')
+                    }
+                    SelfEscape() => {
+                        self.state = HaveEscaped(c);
+                        Some('\\')
+                    }
+                },
             },
         }
     }
 }
 
-impl<'a> Iterator for EscapeJSONMinimal<'a> {
+impl<'a> Iterator for EscapeJSONString<'a> {
     type Item = char;
 
     fn next(&mut self) -> Option<char> {
@@ -185,4 +286,4 @@ impl<'a> Iterator for EscapeJSONMinimal<'a> {
 
 use std::iter::FusedIterator;
 
-impl<'a> FusedIterator for EscapeJSONMinimal<'a> {}
+impl<'a> FusedIterator for EscapeJSONString<'a> {}

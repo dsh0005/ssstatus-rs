@@ -30,7 +30,7 @@ use crate::time::ShortenedDTD;
 
 mod json;
 
-use json::EscapeJSONMinimal;
+use json::{EscapeJSONString, minimal_escaping};
 
 async fn print_header<SBO, DO>(
     io_ctx: &Arc<Mutex<StatusbarIOContext<SBO, DO>>>,
@@ -76,13 +76,16 @@ where
         \x20   {\n\
         \x20     \"full_text\": \""
         .chars()
-        .chain(EscapeJSONMinimal::new_from_str(&data.battery().to_string()))
+        .chain(EscapeJSONString::new_from_str(
+            &data.battery().to_string(),
+            minimal_escaping,
+        ))
         .chain(
             "\",\n\
         \x20     \"min_width\": \""
                 .chars(),
         )
-        .chain(EscapeJSONMinimal::new_from_str("000%"))
+        .chain(EscapeJSONString::new_from_str("000%", minimal_escaping))
         .chain(
             "\"\n\
         \x20   },\n\
@@ -90,21 +93,25 @@ where
         \x20     \"full_text\": \""
                 .chars(),
         )
-        .chain(EscapeJSONMinimal::new_from_str(&data.time().to_string()))
+        .chain(EscapeJSONString::new_from_str(
+            &data.time().to_string(),
+            minimal_escaping,
+        ))
         .chain(
             "\",\n\
         \x20     \"short_text\": \""
                 .chars(),
         )
-        .chain(EscapeJSONMinimal::new_from_str(
+        .chain(EscapeJSONString::new_from_str(
             &ShortenedDTD(data.time()).to_string(),
+            minimal_escaping,
         ))
         .chain(
             "\",\n\
         \x20     \"min_width\": \""
                 .chars(),
         )
-        .chain(EscapeJSONMinimal::new_from_str("00:00"))
+        .chain(EscapeJSONString::new_from_str("00:00", minimal_escaping))
         .chain(
             "\"\n\
         \x20   }\n\
