@@ -128,7 +128,7 @@ impl<'a> EscapeJSONString<'a> {
         EscapeJSONString {
             input: s.chars(),
             state: EscapeJSONState::NotEscaping(),
-            policy: policy,
+            policy,
         }
     }
 
@@ -251,7 +251,7 @@ impl<'a> EscapeJSONString<'a> {
     }
 }
 
-impl<'a> Iterator for EscapeJSONString<'a> {
+impl Iterator for EscapeJSONString<'_> {
     type Item = char;
 
     fn next(&mut self) -> Option<char> {
@@ -275,10 +275,9 @@ impl<'a> Iterator for EscapeJSONString<'a> {
         };
 
         let min_remaining = backing_hint.0 + remaining_from_current_state;
-        let max_remaining = match backing_hint.1 {
-            None => None,
-            Some(amount) => Some(amount * 12 + remaining_from_current_state),
-        };
+        let max_remaining = backing_hint
+            .1
+            .map(|amount| amount * 12 + remaining_from_current_state);
 
         (min_remaining, max_remaining)
     }
@@ -286,4 +285,4 @@ impl<'a> Iterator for EscapeJSONString<'a> {
 
 use std::iter::FusedIterator;
 
-impl<'a> FusedIterator for EscapeJSONString<'a> {}
+impl FusedIterator for EscapeJSONString<'_> {}
