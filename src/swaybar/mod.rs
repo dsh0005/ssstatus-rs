@@ -191,4 +191,5 @@ where
     Ok(())
 }
 
+#[cfg(test)]
 mod jsontests;
