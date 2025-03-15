@@ -97,20 +97,34 @@ fn rfc_single_char_escape(c: char) -> Option<char> {
     }
 }
 
-/**
- * Perform minimal escaping, according to IETF RFC 8259. This escapes
- * quotation mark, reverse solidus, and code points 0x00-0x1F. No other
- * characters are requested to be escaped.
- */
-pub fn minimal_escaping(c: &char) -> EscapeJSONDecision {
-    match c {
-        '"' | '\\' => SelfEscape(),
-        '\x00'..='\x1f' => UnicodeEscape(),
-        _ => PrintDirectly(),
-    }
+#[derive(PartialEq, Eq, Hash, Copy, Clone, Debug)]
+pub enum EscapePolicy {
+    /**
+     * Perform minimal escaping, according to IETF RFC 8259. This escapes
+     * quotation mark, reverse solidus, and code points 0x00-0x1F. No other
+     * characters are requested to be escaped.
+     */
+    MinimalEscaping(),
 }
 
-pub type StringEscapePolicy = fn(&char) -> EscapeJSONDecision;
+impl EscapePolicy {
+    /**
+     * Decide what to do with the given char.
+     */
+    pub fn decide(&self, c: &char) -> EscapeJSONDecision {
+        match self {
+            Self::MinimalEscaping() => Self::decide_minimal(c),
+        }
+    }
+
+    fn decide_minimal(c: &char) -> EscapeJSONDecision {
+        match c {
+            '"' | '\\' => SelfEscape(),
+            '\x00'..='\x1f' => UnicodeEscape(),
+            _ => PrintDirectly(),
+        }
+    }
+}
 
 use std::str::Chars;
 
@@ -118,13 +132,13 @@ use std::str::Chars;
 pub struct EscapeJSONString<'a> {
     input: Chars<'a>,
     state: EscapeJSONState,
-    policy: StringEscapePolicy,
+    policy: EscapePolicy,
 }
 
 use EscapeJSONState::*;
 
 impl<'a> EscapeJSONString<'a> {
-    pub fn new_from_str(s: &'a str, policy: StringEscapePolicy) -> Self {
+    pub fn new_from_str(s: &'a str, policy: EscapePolicy) -> Self {
         EscapeJSONString {
             input: s.chars(),
             state: EscapeJSONState::NotEscaping(),
@@ -233,7 +247,7 @@ impl<'a> EscapeJSONString<'a> {
                     self.state = EndOfString();
                     None
                 }
-                Some(c) => match (self.policy)(&c) {
+                Some(c) => match self.policy.decide(&c) {
                     PrintDirectly() => Some(c),
                     UnicodeEscape() => {
                         self.state = InUnicodeEscape((1, c));
