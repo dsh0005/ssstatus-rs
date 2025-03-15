@@ -202,7 +202,9 @@ impl<'a> EscapeJSONString<'a> {
                         _ => unreachable!("Match results are inconsistent."),
                     };
 
-                    let hexdig_value = (surrogate >> ((11 - surrogate_finish_count) * 4)) & 0xf;
+                    let which_hexdig_in_surrogate = surrogate_finish_count - count;
+
+                    let hexdig_value = (surrogate >> ((which_hexdig_in_surrogate) * 4)) & 0xf;
 
                     let hexdig = match hexdig_value {
                         x @ 0..=9 => char::from(
