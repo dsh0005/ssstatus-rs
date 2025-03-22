@@ -41,19 +41,8 @@ struct EscapingResults {
     results: HashMap<EscapePolicy, ExpectedAndResult>,
 }
 
-#[test]
-fn check_non_escapes() {
-    let test_vectors = vec![
-        InputAndExpectedResults {
-            input: "".to_string(),
-            expected_results: HashMap::from([(MinimalEscaping(), "".to_string())]),
-        },
-        InputAndExpectedResults {
-            input: "some text".to_string(),
-            expected_results: HashMap::from([(MinimalEscaping(), "some text".to_string())]),
-        },
-    ];
-
+#[cfg(test)]
+fn check_escapes(test_vectors: Vec<InputAndExpectedResults>) {
     let test_results = test_vectors
         .into_iter()
         .map(|test_vector| EscapingResults {
@@ -86,6 +75,22 @@ fn check_non_escapes() {
 }
 
 #[test]
+fn check_non_escapes() {
+    let test_vectors = vec![
+        InputAndExpectedResults {
+            input: "".to_string(),
+            expected_results: HashMap::from([(MinimalEscaping(), "".to_string())]),
+        },
+        InputAndExpectedResults {
+            input: "some text".to_string(),
+            expected_results: HashMap::from([(MinimalEscaping(), "some text".to_string())]),
+        },
+    ];
+
+    check_escapes(test_vectors);
+}
+
+#[test]
 fn check_control_escapes() {
     let selected_vectors = vec![
         InputAndExpectedResults {
@@ -98,35 +103,7 @@ fn check_control_escapes() {
         },
     ];
 
-    let selected_results = selected_vectors
-        .into_iter()
-        .map(|test_vector| EscapingResults {
-            results: test_vector
-                .expected_results
-                .into_iter()
-                .map(|policy_and_expected| {
-                    (
-                        policy_and_expected.0,
-                        ExpectedAndResult {
-                            expected: policy_and_expected.1,
-                            result: EscapeJSONString::new_from_str(
-                                &test_vector.input,
-                                policy_and_expected.0,
-                            )
-                            .collect::<String>(),
-                        },
-                    )
-                })
-                .collect::<HashMap<_, _>>(),
-            input: test_vector.input,
-        })
-        .collect::<Vec<_>>();
-
-    for res in selected_results {
-        for (policy, e_and_r) in res.results {
-            assert_eq!(e_and_r.expected, e_and_r.result);
-        }
-    }
+    check_escapes(selected_vectors);
 
     // TODO: make sure all control characters get escaped
 }
@@ -152,33 +129,5 @@ fn check_mandatory_escapes() {
         },
     ];
 
-    let should_always_escape_results = always_needs_escape_vectors
-        .into_iter()
-        .map(|test_vector| EscapingResults {
-            results: test_vector
-                .expected_results
-                .into_iter()
-                .map(|policy_and_expected| {
-                    (
-                        policy_and_expected.0,
-                        ExpectedAndResult {
-                            expected: policy_and_expected.1,
-                            result: EscapeJSONString::new_from_str(
-                                &test_vector.input,
-                                policy_and_expected.0,
-                            )
-                            .collect::<String>(),
-                        },
-                    )
-                })
-                .collect::<HashMap<_, _>>(),
-            input: test_vector.input,
-        })
-        .collect::<Vec<_>>();
-
-    for res in should_always_escape_results {
-        for (policy, e_and_r) in res.results {
-            assert_eq!(e_and_r.expected, e_and_r.result);
-        }
-    }
+    check_escapes(always_needs_escape_vectors);
 }
