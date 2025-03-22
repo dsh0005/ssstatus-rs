@@ -69,7 +69,11 @@ fn check_escapes(test_vectors: Vec<InputAndExpectedResults>) {
 
     for test_result in test_results {
         for (policy, e_and_r) in test_result.results {
-            assert_eq!(e_and_r.expected, e_and_r.result);
+            assert_eq!(
+                e_and_r.expected, e_and_r.result,
+                "Escape policy {:?} applied to {:?} should give {:?} but gave {:?}",
+                policy, test_result.input, e_and_r.expected, e_and_r.result
+            );
         }
     }
 }
