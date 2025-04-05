@@ -57,7 +57,9 @@ a few of them:
   clock gets adjusted backwards by a significant amount. It should
   trigger a refresh from `wait_till_time_change`, but I'm not
   completely sure that `wait_till_next_minute` will still fire at the
-  next refresh time.
+  next refresh time. I should fix this by having
+  `wait_till_next_minute` use a timerfd that repeats, and _it_ listens
+  for the clock change.
 - If UPower ever invalidates the battery percentage, we don't handle
   that case. We'll probably need to spawn a task to go fetch the data.
   The same goes for the timezone.
