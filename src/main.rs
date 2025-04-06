@@ -45,7 +45,7 @@ use crate::data::battery::BatteryStatus;
 use crate::data::{MaybeData, StatusbarChangeCause};
 use crate::io::StatusbarIOContext;
 use crate::swaybar::run_statusbar_updater;
-use crate::time::{ClockChangedCallback, wait_till_next_minute, wait_till_time_change};
+use crate::time::{ClockTickCallbacks, tick_every_minute};
 
 async fn wrangle_lifetimes_update(
     change_q: Sender<StatusbarChangeCause>,
@@ -194,6 +194,27 @@ async fn listen_for_tzchange(
     Ok(mtch)
 }
 
+struct TreatPossibleChangesConservatively<'a> {
+    change_q: &'a Sender<StatusbarChangeCause>,
+}
+
+impl ClockTickCallbacks for TreatPossibleChangesConservatively<'_> {
+    async fn changed_minute(&self) -> Result<(), Box<dyn Error>> {
+        self.change_q.send(StatusbarChangeCause::NextMinute).await?;
+        Ok(())
+    }
+    async fn minute_maybe_lost(&self) -> Result<(), Box<dyn Error>> {
+        self.change_q.send(StatusbarChangeCause::NextMinute).await?;
+        Ok(())
+    }
+    async fn adjustment_happened(&self) -> Result<(), Box<dyn Error>> {
+        self.change_q
+            .send(StatusbarChangeCause::ClockAdjust)
+            .await?;
+        Ok(())
+    }
+}
+
 async fn fire_on_next_minute<SBO, DO>(
     change_q: Sender<StatusbarChangeCause>,
     io_ctx: Arc<Mutex<StatusbarIOContext<SBO, DO>>>,
@@ -204,38 +225,11 @@ where
 {
     // TODO this should return Result<!, ...>
 
-    loop {
-        wait_till_next_minute(io_ctx.clone()).await?;
-        change_q.send(StatusbarChangeCause::NextMinute).await?;
-    }
-}
-
-struct TreatPossibleChangesConservatively<'a> {
-    change_q: &'a Sender<StatusbarChangeCause>,
-}
-
-impl ClockChangedCallback for TreatPossibleChangesConservatively<'_> {
-    async fn clock_change_maybe_lost(&self) -> Result<(), Box<dyn Error>> {
-        self.change_q
-            .send(StatusbarChangeCause::ClockAdjust)
-            .await?;
-        Ok(())
-    }
-}
-
-async fn fire_on_clock_change(
-    change_q: Sender<StatusbarChangeCause>,
-) -> Result<Infallible, Box<dyn Error>> {
-    // TODO this should return Result<!, ...>
-
     let cb = TreatPossibleChangesConservatively {
         change_q: &change_q,
     };
 
-    loop {
-        wait_till_time_change(&cb).await?;
-        change_q.send(StatusbarChangeCause::ClockAdjust).await?;
-    }
+    tick_every_minute(io_ctx, &cb).await
 }
 
 async fn task_setup() -> Result<(), Box<dyn Error>> {
@@ -264,7 +258,6 @@ async fn task_setup() -> Result<(), Box<dyn Error>> {
     let tz_connect = local_tasks.spawn_local(listen_for_tzchange(sys_conn.clone(), tx.clone()));
 
     let _tick_minute = local_tasks.spawn_local(fire_on_next_minute(tx.clone(), io_ctx.clone()));
-    let _listen_adj = local_tasks.spawn_local(fire_on_clock_change(tx));
 
     let _update_stat = local_tasks.spawn_local(run_statusbar_updater(rx, io_ctx));
 
