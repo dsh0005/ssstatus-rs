@@ -55,13 +55,13 @@ use nix::errno::Errno::{self, EAGAIN, ECANCELED};
 use nix::sys::time::TimeSpec;
 use nix::sys::timerfd::{ClockId, Expiration, TimerFd, TimerFlags, TimerSetTimeFlags};
 use std::convert::Infallible;
-use std::io;
-use std::os::fd::{AsFd, BorrowedFd};
+use std::fs::File;
+use std::io::Read;
+use std::os::fd::AsFd;
 use std::sync::Arc;
 use tokio::io::unix::AsyncFd;
-use tokio::io::{AsyncWrite, AsyncWriteExt, Interest};
+use tokio::io::{AsyncWrite, AsyncWriteExt, Interest, Ready};
 use tokio::sync::Mutex;
-use tokio::time::sleep;
 
 fn get_next_minute_absolute_timespec() -> Result<TimeSpec, Box<dyn Error>> {
     let start = Local::now();
@@ -105,9 +105,9 @@ where
     )?;
     tfd.set(wait_for_minute, listen_flags)?;
 
-    let borrow_tfd = tfd.as_fd();
+    let copy_tfd = File::from(tfd.as_fd().try_clone_to_owned().unwrap());
 
-    let tok_afd = AsyncFd::with_interest(borrow_tfd, Interest::READABLE | Interest::ERROR)?;
+    let tok_afd = AsyncFd::with_interest(copy_tfd, Interest::READABLE | Interest::ERROR)?;
 
     // We just set the timer, so we'll catch changes from now on,
     // but we might have missed one earlier.
@@ -116,51 +116,92 @@ where
     loop {
         match tok_afd.readable().await {
             Ok(mut guard) => {
-                let read_res = guard.try_io(|_borrowed_timer: &AsyncFd<BorrowedFd>| {
-                    match &tfd.wait() {
-                        Ok(()) => {
-                            // The timer ticked over, we'll fire the callback
-                            // in a moment.
-                            Ok(false)
-                        }
-                        Err(EAGAIN) => {
-                            // It's tokio's job now.
-                            io::Result::Err(std::io::ErrorKind::WouldBlock.into())
-                        }
-                        Err(ECANCELED) => {
-                            // Hey, the clock changed!
-                            Ok(true)
-                        }
-                        Err(eno) => Err((*eno).into()),
-                    }
-                });
+                let mut buf: [u8; 8] = [0; 8];
+                let read_res = tok_afd.get_ref().read(&mut buf);
 
                 match read_res {
-                    Err(_) => {
-                        // No ticks yet, wait some more.
-                        // TODO: is this unreachable?
-                    }
-                    Ok(Ok(true)) => {
-                        // The clock got changed, so the timer got canceled.
-                        // Set it to the next minute, _then_ fire the callback.
+                    Ok(_) => {
+                        if cfg!(feature = "debug_sleep") {
+                            let output = &mut io_ctx.lock().await.debug_output;
+                            output
+                                .write_all("Got Ok(()) from timerfd\n".as_bytes())
+                                .await?;
+                            output.flush().await?;
+                        }
 
-                        let next_tick = get_next_minute_absolute_timespec()?;
-                        let wait_for_minute = Expiration::IntervalDelayed(next_tick, tick_period);
-
-                        tfd.set(wait_for_minute, listen_flags)?;
-
-                        clock_tick_callbacks.adjustment_happened().await?;
-                    }
-                    Ok(Ok(false)) => {
                         // We hit the next minute.
-
                         clock_tick_callbacks.changed_minute().await?;
 
-                        // Circle back around.
+                        guard.retain_ready();
                     }
-                    Ok(Err(e)) => {
-                        return Err(Box::new(e));
-                    }
+                    Err(err) => match err.raw_os_error().map(Errno::from_raw) {
+                        Some(ECANCELED) => {
+                            if cfg!(feature = "debug_sleep") {
+                                let output = &mut io_ctx.lock().await.debug_output;
+                                output
+                                    .write_all("Got ECANCELED from timerfd\n".as_bytes())
+                                    .await?;
+                                output.flush().await?;
+                            }
+
+                            // The clock got changed, so the timer got canceled.
+                            // Set it to the next minute, _then_ fire the callback.
+
+                            let next_tick = get_next_minute_absolute_timespec()?;
+                            let wait_for_minute =
+                                Expiration::IntervalDelayed(next_tick, tick_period);
+
+                            tfd.set(wait_for_minute, listen_flags)?;
+
+                            clock_tick_callbacks.adjustment_happened().await?;
+
+                            guard.clear_ready_matching(Ready::ERROR);
+                        }
+                        Some(EAGAIN) => {
+                            if cfg!(feature = "debug_sleep") {
+                                let output = &mut io_ctx.lock().await.debug_output;
+                                output
+                                    .write_all("Got EAGAIN from timerfd\n".as_bytes())
+                                    .await?;
+                                output.flush().await?;
+                            }
+
+                            guard.clear_ready_matching(Ready::READABLE);
+
+                            // Circle back around.
+                        }
+                        Some(eno) => {
+                            if cfg!(feature = "debug_sleep") {
+                                let output = &mut io_ctx.lock().await.debug_output;
+                                output
+                                    .write_all(
+                                        format!("Got error {:?} from timerfd\n", eno).as_bytes(),
+                                    )
+                                    .await?;
+                                output.flush().await?;
+                            }
+
+                            guard.clear_ready_matching(Ready::ERROR);
+                            return Err(eno.into());
+                        }
+                        None => {
+                            if cfg!(feature = "debug_sleep") {
+                                let output = &mut io_ctx.lock().await.debug_output;
+                                output
+                                    .write_all(
+                                        format!(
+                                            "Got rust-exclusive error {:?} from timerfd\n",
+                                            err
+                                        )
+                                        .as_bytes(),
+                                    )
+                                    .await?;
+                                output.flush().await?;
+                            }
+
+                            return Err(Box::new(err));
+                        }
+                    },
                 }
             }
             Err(e) => match Errno::try_from(e) {
