@@ -273,7 +273,12 @@ async fn task_setup() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
+use nix::sys::prctl::set_timerslack;
+
 pub fn main() -> Result<(), Box<dyn Error>> {
+    // Set a vague guess at a decent slack.
+    set_timerslack(7_500_000u64)?;
+
     Builder::new_current_thread()
         .enable_io()
         .enable_time()
