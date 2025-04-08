@@ -61,6 +61,9 @@ a few of them:
 - Tokio wants to offload writes to stdout to a worker thread. It's fine
   since I can set the keepalive to more than my expected update
   interval, but it could probably be better.
+    - I could set stdout as nonblocking before starting Tokio. That
+      might work. It'd mess up anything that isn't expecting it, but
+      our stdout needs to be tightly controlled anyways.
 - We set timerslack to a reasonable value of 7.5 ms. We should really
   consider querying sway to see if we can figure out a better guess.
 
