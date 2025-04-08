@@ -64,6 +64,10 @@ a few of them:
     - I could set stdout as nonblocking before starting Tokio. That
       might work. It'd mess up anything that isn't expecting it, but
       our stdout needs to be tightly controlled anyways.
+    - Nope! Tokio _still_ offloads to a worker thread for writes to
+      stdout, but now the worker thread dies if it gets EAGAIN!
+    - I could still do something like get a `BorrowedFd` of stdout and
+      do my output with that, but that's a lot of work.
 - We set timerslack to a reasonable value of 7.5 ms. We should really
   consider querying sway to see if we can figure out a better guess.
 
