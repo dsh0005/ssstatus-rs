@@ -60,7 +60,7 @@ use std::io::Read;
 use std::os::fd::AsFd;
 use std::sync::Arc;
 use tokio::io::unix::AsyncFd;
-use tokio::io::{AsyncWrite, AsyncWriteExt, Interest, Ready};
+use tokio::io::{AsyncWriteExt, Interest, Ready};
 use tokio::sync::Mutex;
 
 fn get_next_minute_absolute_timespec() -> Result<TimeSpec, Box<dyn Error>> {
@@ -83,14 +83,10 @@ pub trait ClockTickCallbacks {
     async fn adjustment_happened(&self) -> Result<(), Box<dyn Error>>;
 }
 
-pub async fn tick_every_minute<SBO, DO>(
-    io_ctx: Arc<Mutex<StatusbarIOContext<SBO, DO>>>,
+pub async fn tick_every_minute(
+    io_ctx: Arc<Mutex<StatusbarIOContext<'_>>>,
     clock_tick_callbacks: &impl ClockTickCallbacks,
-) -> Result<Infallible, Box<dyn Error>>
-where
-    SBO: AsyncWrite + Unpin,
-    DO: AsyncWrite + Unpin,
-{
+) -> Result<Infallible, Box<dyn Error>> {
     let next_tick = get_next_minute_absolute_timespec()?;
     let tick_period = TimeSpec::new(60, 0);
 

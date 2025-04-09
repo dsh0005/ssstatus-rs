@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 /* Silly Simple Status(bar) widget
- * Copyright (C) 2024 Douglas Storm Hill
+ * Copyright (C) 2024, 2025 Douglas Storm Hill
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -19,41 +19,26 @@
 
 use tokio::io::AsyncWrite;
 
-pub struct StatusbarIOContext<SBO: AsyncWrite + Unpin, DO: AsyncWrite + Unpin> {
-    pub statusbar_output: SBO,
-    pub debug_output: DO,
+pub struct StatusbarIOContext<'a> {
+    pub statusbar_output: Box<dyn AsyncWrite + Unpin + 'a>,
+    pub debug_output: Box<dyn AsyncWrite + Unpin + 'a>,
 }
 
-impl<SBO, DO> From<(SBO, DO)> for StatusbarIOContext<SBO, DO>
-where
-    SBO: AsyncWrite + Unpin,
-    DO: AsyncWrite + Unpin,
+impl<'a>
+    From<(
+        Box<dyn AsyncWrite + Unpin + 'a>,
+        Box<dyn AsyncWrite + Unpin + 'a>,
+    )> for StatusbarIOContext<'a>
 {
-    fn from(value: (SBO, DO)) -> Self {
+    fn from(
+        value: (
+            Box<dyn AsyncWrite + Unpin + 'a>,
+            Box<dyn AsyncWrite + Unpin + 'a>,
+        ),
+    ) -> Self {
         Self {
             statusbar_output: value.0,
             debug_output: value.1,
         }
-    }
-}
-
-impl<O> From<(O,)> for StatusbarIOContext<O, O>
-where
-    O: AsyncWrite + Unpin + Clone,
-{
-    fn from(value: (O,)) -> Self {
-        Self {
-            statusbar_output: value.0.clone(),
-            debug_output: value.0,
-        }
-    }
-}
-
-impl<O> From<O> for StatusbarIOContext<O, O>
-where
-    O: AsyncWrite + Unpin + Clone,
-{
-    fn from(value: O) -> Self {
-        StatusbarIOContext::from((value,))
     }
 }

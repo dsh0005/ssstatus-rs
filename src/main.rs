@@ -215,14 +215,10 @@ impl ClockTickCallbacks for TreatPossibleChangesConservatively<'_> {
     }
 }
 
-async fn fire_on_next_minute<SBO, DO>(
+async fn fire_on_next_minute(
     change_q: Sender<StatusbarChangeCause>,
-    io_ctx: Arc<Mutex<StatusbarIOContext<SBO, DO>>>,
-) -> Result<Infallible, Box<dyn Error>>
-where
-    SBO: AsyncWrite + Unpin,
-    DO: AsyncWrite + Unpin,
-{
+    io_ctx: Arc<Mutex<StatusbarIOContext<'_>>>,
+) -> Result<Infallible, Box<dyn Error>> {
     // TODO this should return Result<!, ...>
 
     let cb = TreatPossibleChangesConservatively {
@@ -232,12 +228,29 @@ where
     tick_every_minute(io_ctx, &cb).await
 }
 
-async fn task_setup() -> Result<(), Box<dyn Error>> {
+use std::os::fd::OwnedFd;
+use tokio::net::unix::pipe;
+
+fn get_stderr_upcast() -> Box<dyn AsyncWrite + Unpin> {
+    Box::new(tokio_io::stderr())
+}
+
+fn get_output(out_to_sway: OwnedFd) -> Result<Box<dyn AsyncWrite + Unpin>, Box<dyn Error>> {
+    if let Ok(pipe_possibility) = pipe::Sender::from_owned_fd(out_to_sway) {
+        return Ok(Box::new(pipe_possibility));
+    }
+
+    Ok(Box::new(tokio_io::stdout()))
+}
+
+async fn task_setup(out_to_sway: OwnedFd) -> Result<(), Box<dyn Error>> {
+    let sender_to_sway = get_output(out_to_sway)?;
+
     let local_tasks = tokio::task::LocalSet::new();
 
     let io_ctx = Arc::new(Mutex::new(StatusbarIOContext::from((
-        tokio_io::stdout(),
-        tokio_io::stderr(),
+        sender_to_sway,
+        get_stderr_upcast(),
     ))));
 
     // Connect to the system bus, since we want time, battery, &c. info.
@@ -274,10 +287,20 @@ async fn task_setup() -> Result<(), Box<dyn Error>> {
 }
 
 use nix::sys::prctl::set_timerslack;
+use nix::unistd::dup2;
+use std::os::fd::{AsFd, AsRawFd};
 
 pub fn main() -> Result<(), Box<dyn Error>> {
     // Set a vague guess at a decent slack.
     set_timerslack(7_500_000u64)?;
+
+    // Right now, stdout is a pipe to sway, and stderr goes... somewhere
+    // else. Let's redirect stdout to also go there, and use another fd
+    // for the pipe to sway.
+
+    let out_to_sway = std::io::stdout().as_fd().try_clone_to_owned()?;
+
+    dup2(std::io::stderr().as_raw_fd(), std::io::stdout().as_raw_fd())?;
 
     Builder::new_current_thread()
         .enable_io()
@@ -285,5 +308,5 @@ pub fn main() -> Result<(), Box<dyn Error>> {
         .thread_keep_alive(Duration::from_secs(70))
         .build()
         .unwrap()
-        .block_on(task_setup())
+        .block_on(task_setup(out_to_sway))
 }
