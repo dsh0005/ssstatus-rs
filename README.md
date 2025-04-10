@@ -58,16 +58,6 @@ a few of them:
   The same goes for the timezone.
 - The way `dbus` works clashes with how I want to do async. The
   matchers are pretty gross, and should make that obvious.
-- Tokio wants to offload writes to stdout to a worker thread. It's fine
-  since I can set the keepalive to more than my expected update
-  interval, but it could probably be better.
-    - I could set stdout as nonblocking before starting Tokio. That
-      might work. It'd mess up anything that isn't expecting it, but
-      our stdout needs to be tightly controlled anyways.
-    - Nope! Tokio _still_ offloads to a worker thread for writes to
-      stdout, but now the worker thread dies if it gets EAGAIN!
-    - I could still do something like get a `BorrowedFd` of stdout and
-      do my output with that, but that's a lot of work.
 - We set timerslack to a reasonable value of 7.5 ms. We should really
   consider querying sway to see if we can figure out a better guess.
 
