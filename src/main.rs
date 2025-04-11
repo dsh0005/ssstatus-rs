@@ -231,7 +231,9 @@ async fn fire_on_next_minute(
 use std::os::fd::OwnedFd;
 use tokio::net::unix::pipe;
 
-fn get_output(out_to_sway: OwnedFd) -> Result<Box<dyn AsyncWrite + Unpin>, Box<dyn Error>> {
+fn get_output(
+    out_to_sway: OwnedFd,
+) -> Result<Box<dyn AsyncWrite + Unpin + Send + Sync>, Box<dyn Error>> {
     // If the user runs us directly in a console, our output might not
     // be a pipe. Handle that possibility.
 

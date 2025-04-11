@@ -20,12 +20,12 @@
 use tokio::io::{AsyncWrite, Stderr, stderr};
 
 pub struct StatusbarIOContext<'a> {
-    pub statusbar_output: Box<dyn AsyncWrite + Unpin + 'a>,
+    pub statusbar_output: Box<dyn AsyncWrite + Unpin + Send + Sync + 'a>,
     pub debug_output: Stderr,
 }
 
-impl<'a> From<Box<dyn AsyncWrite + Unpin + 'a>> for StatusbarIOContext<'a> {
-    fn from(value: Box<dyn AsyncWrite + Unpin + 'a>) -> Self {
+impl<'a> From<Box<dyn AsyncWrite + Unpin + Send + Sync + 'a>> for StatusbarIOContext<'a> {
+    fn from(value: Box<dyn AsyncWrite + Unpin + Send + Sync + 'a>) -> Self {
         Self {
             statusbar_output: value,
             debug_output: stderr(),
