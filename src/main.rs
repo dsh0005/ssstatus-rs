@@ -28,6 +28,7 @@ use dbus::strings::{Interface, Member};
 use dbus_tokio::connection;
 use std::convert::Infallible;
 use std::error::Error;
+use std::rc::Rc;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::io::{self as tokio_io, AsyncWrite};
@@ -217,7 +218,7 @@ impl ClockTickCallbacks for TreatPossibleChangesConservatively<'_> {
 
 async fn fire_on_next_minute(
     change_q: Sender<StatusbarChangeCause>,
-    io_ctx: Arc<Mutex<StatusbarIOContext<'_>>>,
+    io_ctx: Rc<Mutex<StatusbarIOContext<'_>>>,
 ) -> Result<Infallible, Box<dyn Error>> {
     // TODO this should return Result<!, ...>
 
@@ -249,7 +250,7 @@ async fn task_setup(out_to_sway: OwnedFd) -> Result<(), Box<dyn Error>> {
 
     let local_tasks = tokio::task::LocalSet::new();
 
-    let io_ctx = Arc::new(Mutex::new(StatusbarIOContext::from(sender_to_sway)));
+    let io_ctx = Rc::new(Mutex::new(StatusbarIOContext::from(sender_to_sway)));
 
     // Connect to the system bus, since we want time, battery, &c. info.
     let (sys_resource, sys_conn) = connection::new_system_local()?;

@@ -58,7 +58,7 @@ use std::convert::Infallible;
 use std::fs::File;
 use std::io::Read;
 use std::os::fd::AsFd;
-use std::sync::Arc;
+use std::rc::Rc;
 use tokio::io::unix::AsyncFd;
 use tokio::io::{AsyncWriteExt, Interest, Ready};
 use tokio::sync::Mutex;
@@ -84,7 +84,7 @@ pub trait ClockTickCallbacks {
 }
 
 pub async fn tick_every_minute(
-    io_ctx: Arc<Mutex<StatusbarIOContext<'_>>>,
+    io_ctx: Rc<Mutex<StatusbarIOContext<'_>>>,
     clock_tick_callbacks: &impl ClockTickCallbacks,
 ) -> Result<Infallible, Box<dyn Error>> {
     let next_tick = get_next_minute_absolute_timespec()?;

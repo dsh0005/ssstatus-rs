@@ -18,7 +18,7 @@
  */
 
 use std::error::Error;
-use std::sync::Arc;
+use std::rc::Rc;
 use tokio::io::AsyncWriteExt;
 use tokio::sync::Mutex;
 use tokio::sync::mpsc::Receiver;
@@ -32,7 +32,7 @@ mod json;
 
 use json::{EscapeJSONString, EscapePolicy::MinimalEscaping};
 
-async fn print_header(io_ctx: &Arc<Mutex<StatusbarIOContext<'_>>>) -> Result<(), Box<dyn Error>> {
+async fn print_header(io_ctx: &Rc<Mutex<StatusbarIOContext<'_>>>) -> Result<(), Box<dyn Error>> {
     let header = String::from("{ \"version\": 1 }\n");
 
     let output = &mut io_ctx.lock().await.statusbar_output;
@@ -43,7 +43,7 @@ async fn print_header(io_ctx: &Arc<Mutex<StatusbarIOContext<'_>>>) -> Result<(),
 }
 
 async fn print_body_begin(
-    io_ctx: &Arc<Mutex<StatusbarIOContext<'_>>>,
+    io_ctx: &Rc<Mutex<StatusbarIOContext<'_>>>,
 ) -> Result<(), Box<dyn Error>> {
     let body_begin = String::from("[\n");
 
@@ -56,7 +56,7 @@ async fn print_body_begin(
 
 async fn print_status_line(
     data: &StatusbarData,
-    io_ctx: &Arc<Mutex<StatusbarIOContext<'_>>>,
+    io_ctx: &Rc<Mutex<StatusbarIOContext<'_>>>,
 ) -> Result<(), Box<dyn Error>> {
     let line = "  [\n\
         \x20   {\n\
@@ -116,7 +116,7 @@ async fn print_status_line(
 
 async fn print_infinite_body(
     mut change_q: Receiver<StatusbarChangeCause>,
-    io_ctx: Arc<Mutex<StatusbarIOContext<'_>>>,
+    io_ctx: Rc<Mutex<StatusbarIOContext<'_>>>,
 ) -> Result<(), Box<dyn Error>> {
     print_body_begin(&io_ctx).await?;
 
@@ -160,7 +160,7 @@ async fn print_infinite_body(
 
 pub async fn run_statusbar_updater(
     change_q: Receiver<StatusbarChangeCause>,
-    io_ctx: Arc<Mutex<StatusbarIOContext<'_>>>,
+    io_ctx: Rc<Mutex<StatusbarIOContext<'_>>>,
 ) -> Result<(), Box<dyn Error>> {
     print_header(&io_ctx).await?;
 
