@@ -231,12 +231,6 @@ async fn fire_on_next_minute(
 use std::os::fd::OwnedFd;
 use tokio::net::unix::pipe;
 
-fn get_stderr_upcast() -> Box<dyn AsyncWrite + Unpin> {
-    // Do the upcast here, since it confuses StatusbarIOContext::from
-    // for some reason?
-    Box::new(tokio_io::stderr())
-}
-
 fn get_output(out_to_sway: OwnedFd) -> Result<Box<dyn AsyncWrite + Unpin>, Box<dyn Error>> {
     // If the user runs us directly in a console, our output might not
     // be a pipe. Handle that possibility.
@@ -253,10 +247,7 @@ async fn task_setup(out_to_sway: OwnedFd) -> Result<(), Box<dyn Error>> {
 
     let local_tasks = tokio::task::LocalSet::new();
 
-    let io_ctx = Arc::new(Mutex::new(StatusbarIOContext::from((
-        sender_to_sway,
-        get_stderr_upcast(),
-    ))));
+    let io_ctx = Arc::new(Mutex::new(StatusbarIOContext::from(sender_to_sway)));
 
     // Connect to the system bus, since we want time, battery, &c. info.
     let (sys_resource, sys_conn) = connection::new_system_local()?;
