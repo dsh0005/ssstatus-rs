@@ -232,10 +232,15 @@ use std::os::fd::OwnedFd;
 use tokio::net::unix::pipe;
 
 fn get_stderr_upcast() -> Box<dyn AsyncWrite + Unpin> {
+    // Do the upcast here, since it confuses StatusbarIOContext::from
+    // for some reason?
     Box::new(tokio_io::stderr())
 }
 
 fn get_output(out_to_sway: OwnedFd) -> Result<Box<dyn AsyncWrite + Unpin>, Box<dyn Error>> {
+    // If the user runs us directly in a console, our output might not
+    // be a pipe. Handle that possibility.
+
     if let Ok(pipe_possibility) = pipe::Sender::from_owned_fd(out_to_sway) {
         return Ok(Box::new(pipe_possibility));
     }
