@@ -285,21 +285,26 @@ async fn task_setup(out_to_sway: OwnedFd) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
+use nix::fcntl::{OFlag, open};
 use nix::sys::prctl::set_timerslack;
-use nix::unistd::dup2_stdout;
-use std::os::fd::{AsFd, AsRawFd};
+use nix::sys::stat::Mode;
 
 pub fn main() -> Result<(), Box<dyn Error>> {
     // Set a vague guess at a decent slack.
     set_timerslack(7_500_000u64)?;
 
-    // Right now, stdout is a pipe to sway, and stderr goes... somewhere
-    // else. Let's redirect stdout to also go there, and use another fd
-    // for the pipe to sway.
+    // Right now, stdout is a pipe to sway. Let's open a copy as
+    // nonblocking, since that's much safer than messing with the
+    // existing open file description.
 
-    let out_to_sway = std::io::stdout().as_fd().try_clone_to_owned()?;
-
-    dup2_stdout(std::io::stderr())?;
+    let out_to_sway = open(
+        "/proc/self/fd/1",
+        OFlag::empty()
+            .union(OFlag::O_WRONLY)
+            .union(OFlag::O_NONBLOCK)
+            .union(OFlag::O_CLOEXEC),
+        Mode::empty(),
+    )?;
 
     Builder::new_current_thread()
         .enable_io()
