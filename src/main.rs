@@ -286,7 +286,7 @@ async fn task_setup(out_to_sway: OwnedFd) -> Result<(), Box<dyn Error>> {
 }
 
 use nix::sys::prctl::set_timerslack;
-use nix::unistd::dup2;
+use nix::unistd::dup2_stdout;
 use std::os::fd::{AsFd, AsRawFd};
 
 pub fn main() -> Result<(), Box<dyn Error>> {
@@ -299,7 +299,7 @@ pub fn main() -> Result<(), Box<dyn Error>> {
 
     let out_to_sway = std::io::stdout().as_fd().try_clone_to_owned()?;
 
-    dup2(std::io::stderr().as_raw_fd(), std::io::stdout().as_raw_fd())?;
+    dup2_stdout(std::io::stderr())?;
 
     Builder::new_current_thread()
         .enable_io()
